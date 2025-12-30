@@ -89,7 +89,7 @@ class AppState: ObservableObject {
     }
 
     // MARK: - Persistence
-    private func saveGoal(_ goal: Goal) {
+    func saveGoal(_ goal: Goal) {
         if let encoded = try? JSONEncoder().encode(goal) {
             UserDefaults.standard.set(encoded, forKey: "savedGoal")
         }
@@ -103,7 +103,7 @@ class AppState: ObservableObject {
         return nil
     }
 
-    private func saveUser(_ user: MomentumUser) {
+    func saveUser(_ user: MomentumUser) {
         if let encoded = try? JSONEncoder().encode(user) {
             UserDefaults.standard.set(encoded, forKey: "savedUser")
         }

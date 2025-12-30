@@ -258,6 +258,10 @@ struct ProfileView: View {
                 .padding(.horizontal)
 
             VStack(spacing: 0) {
+                manageGoalRow(title: "Generate New Plan", icon: "sparkles") {
+                    showGenerateNewPlan = true
+                }
+                Divider().background(Color.white.opacity(0.1))
                 manageGoalRow(title: "Active Goals (1/2)") {}
                 Divider().background(Color.white.opacity(0.1))
                 manageGoalRow(title: "Completed Goals") {}
@@ -270,9 +274,14 @@ struct ProfileView: View {
         }
     }
 
-    private func manageGoalRow(title: String, action: @escaping () -> Void) -> some View {
+    private func manageGoalRow(title: String, icon: String? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack {
+                if let icon = icon {
+                    Image(systemName: icon)
+                        .foregroundColor(.momentumViolet)
+                        .frame(width: 24)
+                }
                 Text(title)
                     .font(MomentumFont.body(15))
                     .foregroundColor(.white)
@@ -580,6 +589,318 @@ struct AIPersonalitySheet: View {
                     )
             )
         }
+    }
+}
+
+// MARK: - Quick Plan Generator Sheet
+struct QuickPlanGeneratorSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var appState: AppState
+    @StateObject private var groqService = GroqService.shared
+
+    @State private var visionText: String = ""
+    @State private var generatedQuestions: [OnboardingQuestion] = []
+    @State private var answers = OnboardingAnswers()
+    @State private var isLoadingQuestions = false
+    @State private var isGeneratingPlan = false
+    @State private var currentStep: Step = .vision
+
+    enum Step {
+        case vision
+        case loadingQuestions
+        case questions
+        case generating
+    }
+
+    var body: some View {
+        NavigationView {
+            ZStack {
+                Color.momentumDarkBackground
+                    .ignoresSafeArea()
+
+                switch currentStep {
+                case .vision:
+                    visionInputView
+                case .loadingQuestions:
+                    loadingQuestionsView
+                case .questions:
+                    if !generatedQuestions.isEmpty {
+                        questionsView
+                    }
+                case .generating:
+                    generatingView
+                }
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                    .foregroundColor(.momentumSecondaryText)
+                }
+
+                ToolbarItem(placement: .principal) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "sparkles")
+                            .foregroundColor(.momentumViolet)
+                        Text("Generate Plan")
+                            .font(MomentumFont.heading(17))
+                            .foregroundColor(.white)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Vision Input
+    private var visionInputView: some View {
+        VStack(spacing: 24) {
+            Spacer()
+
+            VStack(spacing: 16) {
+                Text("What's your vision?")
+                    .font(MomentumFont.heading(24))
+                    .foregroundColor(.white)
+
+                Text("Tell us what you want to achieve")
+                    .font(MomentumFont.body(16))
+                    .foregroundColor(.momentumSecondaryText)
+            }
+
+            TextField("Type your vision...", text: $visionText, axis: .vertical)
+                .font(MomentumFont.body(17))
+                .foregroundColor(.white)
+                .padding()
+                .frame(minHeight: 120, alignment: .topLeading)
+                .background(Color.white.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .padding(.horizontal)
+
+            Spacer()
+
+            Button {
+                generateQuestions()
+            } label: {
+                HStack {
+                    Text("Continue")
+                    Image(systemName: "arrow.right")
+                }
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .disabled(visionText.count < 10)
+            .opacity(visionText.count < 10 ? 0.5 : 1)
+            .padding(.horizontal)
+            .padding(.bottom, 32)
+        }
+    }
+
+    // MARK: - Loading Questions
+    private var loadingQuestionsView: some View {
+        VStack(spacing: 40) {
+            Spacer()
+
+            ProgressView()
+                .tint(.momentumViolet)
+                .scaleEffect(1.5)
+
+            VStack(spacing: 8) {
+                Text("Analyzing your vision")
+                    .font(MomentumFont.heading(20))
+                    .foregroundColor(.white)
+
+                Text("Creating personalized questions...")
+                    .font(MomentumFont.body(16))
+                    .foregroundColor(.momentumSecondaryText)
+            }
+
+            Spacer()
+        }
+    }
+
+    // MARK: - Questions View
+    private var questionsView: some View {
+        DynamicQuestionnaireView(
+            questions: generatedQuestions,
+            answers: $answers,
+            onComplete: {
+                generatePlan()
+            },
+            onBack: {
+                currentStep = .vision
+            }
+        )
+    }
+
+    // MARK: - Generating View
+    private var generatingView: some View {
+        VStack(spacing: 40) {
+            Spacer()
+
+            ProgressView()
+                .tint(.momentumViolet)
+                .scaleEffect(1.5)
+
+            VStack(spacing: 8) {
+                Text("Generating your plan")
+                    .font(MomentumFont.heading(20))
+                    .foregroundColor(.white)
+
+                Text("This will just take a moment...")
+                    .font(MomentumFont.body(16))
+                    .foregroundColor(.momentumSecondaryText)
+            }
+
+            Spacer()
+        }
+    }
+
+    // MARK: - AI Functions
+    private func generateQuestions() {
+        currentStep = .loadingQuestions
+        answers.visionText = visionText
+
+        Task {
+            do {
+                let questions = try await groqService.generateOnboardingQuestions(visionText: visionText)
+
+                await MainActor.run {
+                    generatedQuestions = questions
+                    currentStep = .questions
+                }
+            } catch {
+                await MainActor.run {
+                    // Fallback to default questions
+                    generatedQuestions = createFallbackQuestions()
+                    currentStep = .questions
+                }
+                print("Error generating questions: \(error)")
+            }
+        }
+    }
+
+    private func generatePlan() {
+        currentStep = .generating
+
+        Task {
+            do {
+                let plan = try await groqService.generateGoalPlan(
+                    visionText: visionText,
+                    answers: answers
+                )
+
+                await MainActor.run {
+                    // Convert plan to Goal and save
+                    let goal = convertPlanToGoal(plan)
+                    appState.activeGoal = goal
+                    appState.saveGoal(goal)
+                    appState.loadTodaysTasks()
+
+                    dismiss()
+                }
+            } catch {
+                await MainActor.run {
+                    print("Error generating plan: \(error)")
+                    dismiss()
+                }
+            }
+        }
+    }
+
+    private func createFallbackQuestions() -> [OnboardingQuestion] {
+        [
+            OnboardingQuestion(
+                question: "What's your current experience level?",
+                options: ["Complete beginner", "Some experience", "Intermediate", "Advanced"],
+                allowsTextInput: false
+            ),
+            OnboardingQuestion(
+                question: "How much time can you dedicate weekly?",
+                options: ["5-10 hours", "10-20 hours", "20+ hours"],
+                allowsTextInput: false
+            ),
+            OnboardingQuestion(
+                question: "What's your biggest concern?",
+                options: ["Getting started", "Staying consistent", "Making progress", "Managing time"],
+                allowsTextInput: false
+            )
+        ]
+    }
+
+    private func convertPlanToGoal(_ plan: AIGeneratedPlan) -> Goal {
+        let goalId = UUID()
+        let userId = appState.currentUser?.id ?? UUID()
+
+        var powerGoals: [PowerGoal] = []
+
+        for (index, pgData) in plan.powerGoals.enumerated() {
+            let powerGoalId = UUID()
+            var milestones: [WeeklyMilestone] = []
+
+            if index == 0 {
+                for (weekIndex, milestone) in plan.currentPowerGoal.weeklyMilestones.enumerated() {
+                    let milestoneId = UUID()
+                    var tasks: [MomentumTask] = []
+
+                    for dailyTask in milestone.dailyTasks {
+                        let taskDate = Calendar.current.date(
+                            byAdding: .day,
+                            value: (weekIndex * 7) + (dailyTask.day - 1),
+                            to: Date()
+                        ) ?? Date()
+
+                        for taskData in dailyTask.tasks {
+                            let task = MomentumTask(
+                                weeklyMilestoneId: milestoneId,
+                                goalId: goalId,
+                                title: taskData.title,
+                                description: taskData.description,
+                                difficulty: TaskDifficulty(rawValue: taskData.difficulty) ?? .medium,
+                                estimatedMinutes: taskData.estimatedMinutes,
+                                isAnchorTask: taskData.title.lowercased().contains(plan.anchorTask.lowercased().prefix(10)),
+                                scheduledDate: taskDate
+                            )
+                            tasks.append(task)
+                        }
+                    }
+
+                    milestones.append(WeeklyMilestone(
+                        powerGoalId: powerGoalId,
+                        weekNumber: weekIndex + 1,
+                        milestoneText: milestone.milestone,
+                        status: weekIndex == 0 ? .inProgress : .pending,
+                        startDate: weekIndex == 0 ? Date() : nil,
+                        tasks: tasks
+                    ))
+                }
+            }
+
+            powerGoals.append(PowerGoal(
+                id: powerGoalId,
+                goalId: goalId,
+                monthNumber: pgData.month,
+                title: pgData.goal,
+                description: pgData.description,
+                status: index == 0 ? .active : .locked,
+                startDate: index == 0 ? Date() : nil,
+                completionPercentage: 0,
+                weeklyMilestones: milestones
+            ))
+        }
+
+        return Goal(
+            id: goalId,
+            userId: userId,
+            visionText: visionText,
+            visionRefined: plan.visionRefined,
+            isIdentityBased: false,
+            status: .active,
+            createdAt: Date(),
+            targetCompletionDate: Calendar.current.date(byAdding: .year, value: 1, to: Date()),
+            currentPowerGoalIndex: 0,
+            completionPercentage: 0,
+            powerGoals: powerGoals
+        )
     }
 }
 
