@@ -1,150 +1,101 @@
 //
-//  AIAssistantView.swift
+//  GlobalAIChatView.swift
 //  Momentum
 //
-//  Created by Henry Bowman on 12/29/25.
+//  Created by Henry Bowman on 12/31/25.
 //
 
 import SwiftUI
 import PhosphorSwift
 
-struct AIAssistantView: View {
-    @StateObject private var orchestrator = ConversationOrchestrator()
+struct GlobalAIChatView: View {
     @EnvironmentObject var appState: AppState
+    @StateObject private var orchestrator = ConversationOrchestrator()
     @Environment(\.dismiss) var dismiss
 
-    let task: MomentumTask
-    @State private var userQuestion: String = ""
+    @State private var userInput: String = ""
     @State private var conversationHistory: [(question: String, answer: String)] = []
     @State private var clarificationAnswers: [String] = []
-    @FocusState private var isTextFieldFocused: Bool
+    @State private var showTaskPicker: Bool = false
+    @FocusState private var isInputFocused: Bool
+
+    var currentTask: MomentumTask? {
+        appState.globalChatTaskContext
+    }
 
     var body: some View {
         NavigationView {
             ZStack {
-                // Background
-                Color.momentumDarkBackground
-                    .ignoresSafeArea()
+                Color.momentumDarkBackground.ignoresSafeArea()
 
                 VStack(spacing: 0) {
-                    // Task Info Header
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Need help with this task?")
-                            .font(MomentumFont.bodyMedium(14))
-                            .foregroundColor(.momentumSecondaryText)
-
-                        HStack {
-                            Text(task.title)
-                                .font(MomentumFont.heading(18))
-                                .foregroundColor(.white)
-
-                            Spacer()
-
-                            HStack(spacing: 4) {
-                                Ph.clock.regular
-                                    .frame(width: 12, height: 12)
-                                    .color(.momentumSecondaryText)
-                                Text("\(task.estimatedMinutes) min")
-                                    .font(MomentumFont.body(13))
-                                    .foregroundColor(.momentumSecondaryText)
-                            }
-                        }
-
-                        if let description = task.taskDescription {
-                            Text(description)
-                                .font(MomentumFont.body(14))
-                                .foregroundColor(.momentumSecondaryText)
-                                .lineLimit(2)
-                        }
+                    // Task Context Header
+                    if let task = currentTask {
+                        taskContextHeader(task)
+                    } else {
+                        noTaskContextHeader
                     }
-                    .padding()
-                    .background(Color.white.opacity(0.05))
 
                     // Conversation Area
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 16) {
-                            // Initial AI greeting
-                            aiMessageBubble(
-                                "Hi! I'm your AI companion. I can research things, help with tasks, and brainstorm ideas. What can I help you with?"
-                            )
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 16) {
+                                // Greeting
+                                aiMessageBubble("Hi! I'm your AI companion. I can research things, help with tasks, and brainstorm ideas. What can I help you with?")
 
-                            // Conversation history
-                            ForEach(conversationHistory.indices, id: \.self) { index in
-                                VStack(alignment: .trailing, spacing: 8) {
-                                    userMessageBubble(conversationHistory[index].question)
-                                    aiMessageBubble(conversationHistory[index].answer)
+                                // Load conversation history if task context exists
+                                if currentTask != nil {
+                                    ForEach(conversationHistory.indices, id: \.self) { index in
+                                        VStack(alignment: .trailing, spacing: 8) {
+                                            userMessageBubble(conversationHistory[index].question)
+                                            aiMessageBubble(conversationHistory[index].answer)
+                                        }
+                                    }
+                                }
+
+                                // Current conversation from orchestrator
+                                ForEach(orchestrator.currentConversation) { message in
+                                    if message.role == .user {
+                                        userMessageBubble(message.content)
+                                    } else if message.role == .assistant {
+                                        aiMessageBubble(message.content)
+                                    }
+                                }
+
+                                // Clarifying questions UI
+                                if orchestrator.awaitingClarification {
+                                    clarifyingQuestionsView
+                                }
+
+                                // Loading indicator
+                                if orchestrator.isProcessing {
+                                    HStack {
+                                        ProgressView().tint(.momentumViolet)
+                                        Text(orchestrator.awaitingClarification ? "Generating questions..." : "Researching...")
+                                            .font(MomentumFont.body(14))
+                                            .foregroundColor(.momentumSecondaryText)
+                                    }
                                 }
                             }
-
-                            // Clarifying questions UI
-                            if orchestrator.awaitingClarification {
-                                clarifyingQuestionsView
-                            }
-
-                            // Current loading state
-                            if orchestrator.isProcessing {
-                                HStack {
-                                    ProgressView()
-                                        .tint(.momentumViolet)
-                                    Text(orchestrator.awaitingClarification ? "Generating questions..." : "Researching...")
-                                        .font(MomentumFont.body(14))
-                                        .foregroundColor(.momentumSecondaryText)
-                                }
-                                .padding(.leading)
+                            .padding()
+                            .id("bottomOfConversation")
+                        }
+                        .onChange(of: orchestrator.currentConversation.count) {
+                            withAnimation {
+                                proxy.scrollTo("bottomOfConversation", anchor: .bottom)
                             }
                         }
-                        .padding()
-                    }
-
-                    // Suggested Questions
-                    if conversationHistory.isEmpty && !orchestrator.isProcessing {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Suggested questions:")
-                                .font(MomentumFont.bodyMedium(12))
-                                .foregroundColor(.momentumSecondaryText)
-                                .padding(.horizontal)
-
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 8) {
-                                    suggestedQuestionButton("Can you research demographics for my app?")
-                                    suggestedQuestionButton("How do I get started?")
-                                    suggestedQuestionButton("What should I focus on?")
-                                }
-                                .padding(.horizontal)
-                            }
-                        }
-                        .padding(.bottom, 8)
                     }
 
                     // Input Area
-                    HStack(spacing: 12) {
-                        TextField(orchestrator.awaitingClarification ? "Answer the questions above..." : "Ask me anything...", text: $userQuestion)
-                            .font(MomentumFont.body(16))
-                            .foregroundColor(.white)
-                            .padding(.vertical, 12)
-                            .padding(.horizontal, 16)
-                            .frame(maxWidth: .infinity)
-                            .background(Color.white.opacity(0.08))
-                            .clipShape(RoundedRectangle(cornerRadius: 24))
-                            .focused($isTextFieldFocused)
-                            .disabled(orchestrator.isProcessing || orchestrator.awaitingClarification)
-
-                        Button(action: askQuestion) {
-                            Ph.arrowCircleUp.fill
-                                .frame(width: 32, height: 32)
-                                .color(userQuestion.isEmpty || orchestrator.isProcessing ? .gray : .momentumViolet)
-                        }
-                        .disabled(userQuestion.isEmpty || orchestrator.isProcessing || orchestrator.awaitingClarification)
-                    }
-                    .padding()
-                    .background(Color.momentumDarkBackground)
+                    inputSection
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") {
-                        dismiss()
+                        saveAndDismiss()
                     }
                     .foregroundColor(.momentumViolet)
                 }
@@ -152,12 +103,63 @@ struct AIAssistantView: View {
         }
         .preferredColorScheme(.dark)
         .onAppear {
-            isTextFieldFocused = true
+            isInputFocused = true
             loadExistingConversation()
+        }
+        .sheet(isPresented: $showTaskPicker) {
+            TaskPickerView { selectedTask in
+                appState.switchChatTask(selectedTask)
+                showTaskPicker = false
+                loadExistingConversation()
+            }
         }
     }
 
     // MARK: - Subviews
+
+    private func taskContextHeader(_ task: MomentumTask) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Working on:")
+                    .font(MomentumFont.body(12))
+                    .foregroundColor(.momentumSecondaryText)
+                Text(task.title)
+                    .font(MomentumFont.bodyMedium(14))
+                    .foregroundColor(.white)
+            }
+
+            Spacer()
+
+            Button {
+                showTaskPicker = true
+            } label: {
+                Text("Switch Task")
+                    .font(MomentumFont.body(12))
+                    .foregroundColor(.momentumViolet)
+            }
+        }
+        .padding()
+        .background(Color.white.opacity(0.05))
+    }
+
+    private var noTaskContextHeader: some View {
+        Button {
+            showTaskPicker = true
+        } label: {
+            HStack {
+                Ph.target.regular
+                    .frame(width: 14, height: 14)
+                Text("Select a task for context")
+                    .font(MomentumFont.bodyMedium(14))
+                Spacer()
+                Ph.caretRight.regular
+                    .frame(width: 14, height: 14)
+            }
+            .foregroundColor(.momentumViolet)
+            .padding()
+            .background(Color.momentumViolet.opacity(0.1))
+        }
+    }
 
     private var clarifyingQuestionsView: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -168,7 +170,6 @@ struct AIAssistantView: View {
                     Text("\(index + 1). \(question)")
                         .font(MomentumFont.body(14))
                         .foregroundColor(.momentumSecondaryText)
-                        .padding(.leading)
 
                     TextField("Your answer...", text: Binding(
                         get: { clarificationAnswers.indices.contains(index) ? clarificationAnswers[index] : "" },
@@ -188,7 +189,6 @@ struct AIAssistantView: View {
                     .padding(12)
                     .background(Color.white.opacity(0.08))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .padding(.horizontal)
                 }
             }
 
@@ -209,13 +209,38 @@ struct AIAssistantView: View {
             }
             .disabled(clarificationAnswers.count != orchestrator.clarifyingQuestions.count ||
                      clarificationAnswers.contains(where: { $0.isEmpty }))
-            .padding(.horizontal)
         }
         .padding()
-        .background(Color.white.opacity(0.05))
+        .background(Color.white.opacity(0.08))
         .clipShape(RoundedRectangle(cornerRadius: 12))
-        .padding(.horizontal)
     }
+
+    private var inputSection: some View {
+        HStack(spacing: 12) {
+            TextField(orchestrator.awaitingClarification ? "Answer the questions above..." : "Ask me anything...", text: $userInput, axis: .vertical)
+                .font(MomentumFont.body(16))
+                .foregroundColor(.white)
+                .padding(.vertical, 12)
+                .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity)
+                .background(Color.white.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 24))
+                .focused($isInputFocused)
+                .disabled(orchestrator.isProcessing || orchestrator.awaitingClarification)
+                .lineLimit(1...4)
+
+            Button(action: sendMessage) {
+                Ph.arrowCircleUp.fill
+                    .frame(width: 32, height: 32)
+                    .color(userInput.isEmpty || orchestrator.isProcessing ? .gray : .momentumViolet)
+            }
+            .disabled(userInput.isEmpty || orchestrator.isProcessing || orchestrator.awaitingClarification)
+        }
+        .padding()
+        .background(Color.momentumDarkBackground)
+    }
+
+    // MARK: - Message Bubbles
 
     private func aiMessageBubble(_ text: String) -> some View {
         HStack {
@@ -255,24 +280,14 @@ struct AIAssistantView: View {
         }
     }
 
-    private func suggestedQuestionButton(_ question: String) -> some View {
-        Button {
-            userQuestion = question
-            askQuestion()
-        } label: {
-            Text(question)
-                .font(MomentumFont.body(13))
-                .foregroundColor(.white)
-                .padding(.vertical, 8)
-                .padding(.horizontal, 12)
-                .background(Color.white.opacity(0.08))
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-        }
-    }
-
     // MARK: - Actions
 
     private func loadExistingConversation() {
+        guard let task = currentTask else {
+            conversationHistory = []
+            return
+        }
+
         // Load conversation history from task notes
         conversationHistory = []
 
@@ -295,13 +310,22 @@ struct AIAssistantView: View {
                 i += 1
             }
         }
+
+        // Reset orchestrator for fresh conversation
+        orchestrator.reset()
     }
 
-    private func askQuestion() {
-        guard !userQuestion.isEmpty else { return }
+    private func sendMessage() {
+        guard !userInput.isEmpty, let task = currentTask else {
+            // If no task context, prompt to select one
+            if currentTask == nil {
+                showTaskPicker = true
+            }
+            return
+        }
 
-        let message = userQuestion
-        userQuestion = ""
+        let message = userInput
+        userInput = ""
 
         Task {
             do {
@@ -335,24 +359,26 @@ struct AIAssistantView: View {
                     }
                 }
             } catch {
+                print("Error processing message: \(error)")
                 await MainActor.run {
                     conversationHistory.append((
                         question: message,
-                        answer: "Sorry, I couldn't process that. Please check your internet connection and try again."
+                        answer: "Sorry, I couldn't process that. Please check your internet connection and API configuration."
                     ))
                 }
-                print("Error in AI assistant: \(error)")
             }
         }
     }
 
     private func submitClarifications() {
+        guard let task = currentTask else { return }
+
         // Build Q&A pairs
         let qaPairs = zip(orchestrator.clarifyingQuestions, clarificationAnswers).map {
             QAPair(question: $0, answer: $1)
         }
 
-        // Get the original query from orchestrator's pending state
+        // Get the original query
         guard let query = orchestrator.currentConversation.first(where: { $0.role == .user })?.content else {
             return
         }
@@ -400,17 +426,19 @@ struct AIAssistantView: View {
             }
         }
     }
+
+    private func saveAndDismiss() {
+        // Conversation already auto-saved to task notes
+        appState.closeGlobalChat()
+        dismiss()
+    }
 }
 
 #Preview {
-    AIAssistantView(task: MomentumTask(
-        weeklyMilestoneId: UUID(),
-        goalId: UUID(),
-        title: "Draft service packages",
-        taskDescription: "Create 3-tier pricing structure for potential clients",
-        difficulty: .medium,
-        estimatedMinutes: 30,
-        scheduledDate: Date()
-    ))
-    .environmentObject(AppState())
+    GlobalAIChatView()
+        .environmentObject({
+            let state = AppState()
+            state.loadMockData()
+            return state
+        }())
 }

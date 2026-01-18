@@ -169,7 +169,7 @@ class MockDataService {
                 weeklyMilestoneId: milestoneId,
                 goalId: goalId,
                 title: title,
-                description: description,
+                taskDescription: description,
                 difficulty: difficulty,
                 estimatedMinutes: minutes,
                 isAnchorTask: isAnchor,

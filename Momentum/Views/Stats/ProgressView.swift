@@ -1,5 +1,5 @@
 //
-//  StatsView.swift
+//  ProgressView.swift
 //  Momentum
 //
 //  Created by Henry Bowman on 12/28/25.
@@ -7,9 +7,12 @@
 
 import SwiftUI
 import Charts
+import PhosphorSwift
 
-struct StatsView: View {
+struct ProgressView: View {
     @EnvironmentObject var appState: AppState
+    @State private var showProfile = false
+    @State private var showPremiumUpgrade = false
 
     private let weeklyData = MockDataService.shared.weeklyCompletionData
 
@@ -20,11 +23,24 @@ struct StatsView: View {
 
             ScrollView {
                 VStack(spacing: 24) {
-                    // Header
-                    Text("Your Stats")
-                        .font(MomentumFont.heading(20))
-                        .foregroundColor(.white)
-                        .padding(.top)
+                    // Header with profile icon
+                    HStack {
+                        Text("Progress")
+                            .font(MomentumFont.heading(20))
+                            .foregroundColor(.white)
+
+                        Spacer()
+
+                        Button {
+                            showProfile = true
+                        } label: {
+                            Ph.userCircle.fill
+                                .frame(width: 28, height: 28)
+                                .color(.momentumSecondaryText)
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.top)
 
                     // Overview Card
                     overviewCard
@@ -40,9 +56,15 @@ struct StatsView: View {
 
                     // Achievements
                     achievementsSection
-                        .padding(.bottom, 40)
+                        .padding(.bottom, 100)
                 }
             }
+        }
+        .fullScreenCover(isPresented: $showProfile) {
+            ProfileView()
+        }
+        .sheet(isPresented: $showPremiumUpgrade) {
+            PremiumUpgradeSheet()
         }
     }
 
@@ -60,8 +82,8 @@ struct StatsView: View {
                 GridItem(.flexible()),
                 GridItem(.flexible())
             ], spacing: 16) {
-                statItem(title: "Total Tasks", value: "\(MockDataService.shared.totalTasksCompleted)", icon: "checkmark.circle.fill")
-                statItem(title: "Completion Rate", value: "\(Int(MockDataService.shared.completionRate * 100))%", icon: "chart.line.uptrend.xyaxis")
+                statItem(title: "Total Tasks", value: "\(MockDataService.shared.totalTasksCompleted)", icon: "checkmark.circle.fill", usePhosphor: true)
+                statItem(title: "Completion Rate", value: "\(Int(MockDataService.shared.completionRate * 100))%", icon: "chart.line.uptrend.xyaxis", usePhosphor: false)
                 statItem(title: "Current Streak", value: " \(appState.currentUser?.streakCount ?? 0) days", icon: nil)
                 statItem(title: "Longest Streak", value: " \(appState.currentUser?.longestStreak ?? 0) days", icon: nil)
             }
@@ -72,7 +94,7 @@ struct StatsView: View {
         .padding(.horizontal)
     }
 
-    private func statItem(title: String, value: String, icon: String?) -> some View {
+    private func statItem(title: String, value: String, icon: String?, usePhosphor: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(MomentumFont.body(13))
@@ -80,8 +102,14 @@ struct StatsView: View {
 
             HStack(spacing: 6) {
                 if let icon = icon {
-                    Image(systemName: icon)
-                        .foregroundColor(.momentumViolet)
+                    if usePhosphor {
+                        Ph.checkCircle.fill
+                            .frame(width: 20, height: 20)
+                            .color(.momentumViolet)
+                    } else {
+                        Image(systemName: icon)
+                            .foregroundColor(.momentumViolet)
+                    }
                 }
                 Text(value)
                     .font(MomentumFont.stats(20))
@@ -144,8 +172,9 @@ struct StatsView: View {
     private var premiumInsightsCard: some View {
         VStack(spacing: 16) {
             HStack {
-                Image(systemName: "lock.fill")
-                    .foregroundColor(.momentumGold)
+                Ph.lock.fill
+                    .frame(width: 16, height: 16)
+                    .color(.momentumGold)
                 Text("Premium Insights")
                     .font(MomentumFont.bodyMedium(16))
                     .foregroundColor(.white)
@@ -162,11 +191,12 @@ struct StatsView: View {
             .clipShape(RoundedRectangle(cornerRadius: 12))
 
             Button {
-                // Upgrade action
+                showPremiumUpgrade = true
             } label: {
                 HStack {
                     Text("Upgrade to Premium")
-                    Image(systemName: "arrow.right")
+                    Ph.arrowRight.regular
+                        .frame(width: 16, height: 16)
                 }
             }
             .buttonStyle(PrimaryButtonStyle())
@@ -298,7 +328,7 @@ struct StatsView: View {
 }
 
 #Preview {
-    StatsView()
+    ProgressView()
         .environmentObject({
             let state = AppState()
             state.loadMockData()

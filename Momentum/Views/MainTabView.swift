@@ -6,44 +6,108 @@
 //
 
 import SwiftUI
+import PhosphorSwift
 
 struct MainTabView: View {
     @EnvironmentObject var appState: AppState
 
     var body: some View {
-        TabView(selection: $appState.selectedTab) {
-            TodayView()
-                .tabItem {
-                    Label(AppState.Tab.today.rawValue, systemImage: AppState.Tab.today.icon)
+        ZStack {
+            // Current view based on selection
+            Group {
+                switch appState.selectedTab {
+                case .today:
+                    TodayView()
+                case .journey:
+                    JourneyView()
+                case .goals:
+                    GoalsView()
+                case .progress:
+                    ProgressView()
                 }
-                .tag(AppState.Tab.today)
+            }
+            .transition(.opacity)
 
-            RoadView()
-                .tabItem {
-                    Label(AppState.Tab.road.rawValue, systemImage: AppState.Tab.road.icon)
-                }
-                .tag(AppState.Tab.road)
+            // Floating Navigation Bar + AI Button (bottom)
+            VStack {
+                Spacer()
+                HStack(spacing: 12) {
+                    // Custom Floating Tab Bar
+                    FloatingTabBar()
 
-            GoalsView()
-                .tabItem {
-                    Label(AppState.Tab.goals.rawValue, systemImage: AppState.Tab.goals.icon)
+                    // Floating AI Button
+                    FloatingAIButton()
                 }
-                .tag(AppState.Tab.goals)
-
-            StatsView()
-                .tabItem {
-                    Label(AppState.Tab.stats.rawValue, systemImage: AppState.Tab.stats.icon)
-                }
-                .tag(AppState.Tab.stats)
-
-            ProfileView()
-                .tabItem {
-                    Label(AppState.Tab.me.rawValue, systemImage: AppState.Tab.me.icon)
-                }
-                .tag(AppState.Tab.me)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 0)
+            }
+            .ignoresSafeArea(.keyboard)
         }
-        .tint(.momentumViolet)
+        .sheet(isPresented: $appState.showGlobalChat) {
+            GlobalAIChatView()
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
         .preferredColorScheme(.dark)
+    }
+}
+
+// MARK: - Floating Tab Bar
+
+struct FloatingTabBar: View {
+    @EnvironmentObject var appState: AppState
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(AppState.Tab.allCases, id: \.self) { tab in
+                tabButton(for: tab)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color(hex: "1E293B"))
+        .clipShape(RoundedRectangle(cornerRadius: 28))
+        .overlay(
+            RoundedRectangle(cornerRadius: 28)
+                .strokeBorder(Color.momentumSurfaceDivider.opacity(0.3), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.3), radius: 20, y: 10)
+    }
+
+    private func tabButton(for tab: AppState.Tab) -> some View {
+        Button {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                appState.selectedTab = tab
+            }
+        } label: {
+            VStack(spacing: 3) {
+                tabIcon(for: tab)
+                    .color(appState.selectedTab == tab ? .momentumViolet : .momentumSecondaryText)
+                    .frame(width: 18, height: 18)
+
+                Text(tab.rawValue)
+                    .font(MomentumFont.body(9))
+                    .foregroundColor(appState.selectedTab == tab ? .momentumViolet : .momentumSecondaryText)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func tabIcon(for tab: AppState.Tab) -> Image {
+        switch tab.icon {
+        case "sun":
+            return Ph.sun.bold
+        case "road":
+            return Ph.roadHorizon.bold
+        case "target":
+            return Ph.target.bold
+        case "chart":
+            return Ph.chartBar.bold
+        default:
+            return Ph.house.bold
+        }
     }
 }
 

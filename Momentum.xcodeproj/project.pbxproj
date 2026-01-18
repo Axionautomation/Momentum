@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		B356112E2F0C107C0063BCB3 /* PhosphorSwift in Frameworks */ = {isa = PBXBuildFile; productRef = B356112D2F0C107C0063BCB3 /* PhosphorSwift */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		B39D3BF02F020D8800A333CF /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +56,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B356112E2F0C107C0063BCB3 /* PhosphorSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,6 +117,7 @@
 			);
 			name = Momentum;
 			packageProductDependencies = (
+				B356112D2F0C107C0063BCB3 /* PhosphorSwift */,
 			);
 			productName = Momentum;
 			productReference = B39D3BDD2F020D8600A333CF /* Momentum.app */;
@@ -195,6 +201,9 @@
 			);
 			mainGroup = B39D3BD42F020D8600A333CF;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				B356112C2F099CE70063BCB3 /* XCRemoteSwiftPackageReference "swift" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = B39D3BDE2F020D8600A333CF /* Products */;
 			projectDirPath = "";
@@ -578,6 +587,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		B356112C2F099CE70063BCB3 /* XCRemoteSwiftPackageReference "swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/phosphor-icons/swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.1.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		B356112D2F0C107C0063BCB3 /* PhosphorSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B356112C2F099CE70063BCB3 /* XCRemoteSwiftPackageReference "swift" */;
+			productName = PhosphorSwift;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = B39D3BD52F020D8600A333CF /* Project object */;
 }

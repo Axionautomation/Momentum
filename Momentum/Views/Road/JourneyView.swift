@@ -1,15 +1,17 @@
 //
-//  RoadView.swift
+//  JourneyView.swift
 //  Momentum
 //
 //  Created by Henry Bowman on 12/28/25.
 //
 
 import SwiftUI
+import PhosphorSwift
 
-struct RoadView: View {
+struct JourneyView: View {
     @EnvironmentObject var appState: AppState
     @State private var selectedPowerGoal: PowerGoal?
+    @State private var showProfile = false
 
     var body: some View {
         ZStack {
@@ -18,11 +20,24 @@ struct RoadView: View {
 
             ScrollView {
                 VStack(spacing: 0) {
-                    // Header
-                    Text("Road View")
-                        .font(MomentumFont.heading(20))
-                        .foregroundColor(.white)
-                        .padding(.top)
+                    // Header with profile icon
+                    HStack {
+                        Text("Your Journey")
+                            .font(MomentumFont.heading(20))
+                            .foregroundColor(.white)
+
+                        Spacer()
+
+                        Button {
+                            showProfile = true
+                        } label: {
+                            Ph.userCircle.fill
+                                .color(.momentumSecondaryText)
+                                .frame(width: 28, height: 28)
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.top)
 
                     // Vision at Top (Goal)
                     goalDestination
@@ -35,7 +50,7 @@ struct RoadView: View {
                     // Stats Card at Bottom
                     statsCard
                         .padding(.top, 32)
-                        .padding(.bottom, 40)
+                        .padding(.bottom, 100)
                 }
             }
         }
@@ -43,6 +58,9 @@ struct RoadView: View {
             PowerGoalDetailSheet(powerGoal: powerGoal)
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
+        }
+        .fullScreenCover(isPresented: $showProfile) {
+            ProfileView()
         }
     }
 
@@ -52,7 +70,7 @@ struct RoadView: View {
             Text("")
                 .font(.system(size: 40))
 
-            Text(appState.activeGoal?.visionRefined ?? "Your Vision")
+            Text(appState.activeProjectGoal?.visionRefined ?? "Your Vision")
                 .font(MomentumFont.heading(22))
                 .foregroundColor(.white)
                 .multilineTextAlignment(.center)
@@ -86,7 +104,7 @@ struct RoadView: View {
     // MARK: - Road with Power Goals
     private var roadWithPowerGoals: some View {
         VStack(spacing: 0) {
-            ForEach(Array((appState.activeGoal?.powerGoals ?? []).enumerated().reversed()), id: \.element.id) { index, powerGoal in
+            ForEach(Array((appState.activeProjectGoal?.powerGoals ?? []).enumerated().reversed()), id: \.element.id) { index, powerGoal in
                 VStack(spacing: 0) {
                     // Road segment
                     roadSegment(isLeft: index % 2 == 0)
@@ -129,7 +147,7 @@ struct RoadView: View {
     private func powerGoalNode(powerGoal: PowerGoal, index: Int) -> some View {
         let isActive = powerGoal.status == .active
         let isCompleted = powerGoal.status == .completed
-        let isCurrent = index == appState.activeGoal?.currentPowerGoalIndex
+        let isCurrent = index == appState.activeProjectGoal?.currentPowerGoalIndex
 
         return HStack {
             if index % 2 == 0 {
@@ -148,9 +166,9 @@ struct RoadView: View {
                         .frame(width: 50, height: 50)
 
                     if isCompleted {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 20, weight: .bold))
-                            .foregroundColor(.white)
+                        Ph.check.regular
+                            .color(.white)
+                            .frame(width: 20, height: 20)
                     } else {
                         Text("\(powerGoal.monthNumber)")
                             .font(MomentumFont.stats(18))
@@ -159,9 +177,9 @@ struct RoadView: View {
 
                     // User pin for current position
                     if isCurrent && isActive {
-                        Image(systemName: "location.fill")
-                            .font(.system(size: 24))
-                            .foregroundColor(.momentumCoral)
+                        Ph.mapPin.fill
+                            .color(.momentumCoral)
+                            .frame(width: 24, height: 24)
                             .offset(x: 30, y: -20)
                     }
                 }
@@ -241,8 +259,13 @@ struct RoadView: View {
             }
         }
         .padding(24)
-        .background(.ultraThinMaterial)
+        .background(Color.momentumSurfaceSecondary)
         .clipShape(RoundedRectangle(cornerRadius: 20))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .strokeBorder(Color.momentumSurfaceDivider, lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.2), radius: 10, y: 5)
         .padding(.horizontal)
     }
 }
@@ -365,8 +388,9 @@ struct PowerGoalDetailSheet: View {
 
                         ForEach(powerGoal.weeklyMilestones) { milestone in
                             HStack(spacing: 12) {
-                                Image(systemName: milestone.status == .completed ? "checkmark.circle.fill" : "circle")
-                                    .foregroundColor(milestone.status == .completed ? .momentumGreenStart : .momentumSecondaryText)
+                                (milestone.status == .completed ? Ph.checkCircle.fill : Ph.circle.regular)
+                                    .color(milestone.status == .completed ? .momentumGreenStart : .momentumSecondaryText)
+                                    .frame(width: 20, height: 20)
 
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("Week \(milestone.weekNumber)")
@@ -403,7 +427,7 @@ struct PowerGoalDetailSheet: View {
 }
 
 #Preview {
-    RoadView()
+    JourneyView()
         .environmentObject({
             let state = AppState()
             state.loadMockData()

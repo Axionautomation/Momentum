@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import PhosphorSwift
 
 struct OnboardingView: View {
     @EnvironmentObject var appState: AppState
@@ -15,14 +16,20 @@ struct OnboardingView: View {
     @State private var answers = OnboardingAnswers()
     @State private var isGenerating: Bool = false
     @State private var generatedPlan: AIGeneratedPlan?
+    @State private var generatedHabitPlan: AIGeneratedHabitPlan?
+    @State private var generatedIdentityPlan: AIGeneratedIdentityPlan?
     @State private var todaysTasks: [MomentumTask] = []
     @State private var errorMessage: String?
     @State private var generatedQuestions: [OnboardingQuestion] = []
     @State private var isLoadingQuestions: Bool = false
+    @State private var showErrorAlert: Bool = false
+    @State private var detailedError: String = ""
+    @State private var selectedGoalType: GoalType = .project
 
     enum OnboardingStep {
         case welcome
         case howItWorks
+        case goalTypeSelection
         case visionInput
         case loadingQuestions
         case questionnaire
@@ -45,8 +52,14 @@ struct OnboardingView: View {
                 WelcomeView(onContinue: { currentStep = .howItWorks })
             case .howItWorks:
                 HowItWorksView(
+                    onContinue: { currentStep = .goalTypeSelection },
+                    onSkip: { currentStep = .goalTypeSelection }
+                )
+            case .goalTypeSelection:
+                GoalTypeSelectionView(
+                    selectedGoalType: $selectedGoalType,
                     onContinue: { currentStep = .visionInput },
-                    onSkip: { currentStep = .visionInput }
+                    onBack: { currentStep = .howItWorks }
                 )
             case .visionInput:
                 VisionInputView(
@@ -86,25 +99,45 @@ struct OnboardingView: View {
             }
         }
         .preferredColorScheme(.dark)
+        .alert("Generation Failed", isPresented: $showErrorAlert) {
+            Button("Retry") {
+                if currentStep == .generating {
+                    generatePlan()
+                } else if currentStep == .loadingQuestions {
+                    generateQuestions()
+                }
+            }
+            Button("Go Back") {
+                if currentStep == .generating {
+                    currentStep = .questionnaire
+                } else if currentStep == .loadingQuestions {
+                    currentStep = .visionInput
+                }
+            }
+        } message: {
+            Text(detailedError)
+        }
     }
 
     private func generateQuestions() {
         Task {
             do {
                 // Call Groq AI to generate personalized questions
+                print("🚀 Generating questions for vision: \(visionText)")
                 let questions = try await groqService.generateOnboardingQuestions(visionText: visionText)
 
                 await MainActor.run {
+                    print("✅ Generated \(questions.count) questions")
                     generatedQuestions = questions
                     currentStep = .questionnaire
                 }
             } catch {
                 await MainActor.run {
-                    // Fallback to static questions on error
+                    print("⚠️ Error generating questions, using fallback: \(error)")
+                    // Use fallback questions if API fails (less critical than plan generation)
                     generatedQuestions = createFallbackQuestions()
                     currentStep = .questionnaire
                 }
-                print("Error generating questions: \(error)")
             }
         }
     }
@@ -138,25 +171,51 @@ struct OnboardingView: View {
         Task {
             do {
                 // Call Groq AI to generate the plan with dynamic answers
-                print("Generating plan with answers: \(answers)")
+                print("🚀 Generating plan with vision: \(visionText)")
+                print("🎯 Goal Type: \(selectedGoalType)")
+                print("📝 Answers: \(answers)")
                 let plan = try await groqService.generateGoalPlan(
                     visionText: visionText,
+                    goalType: selectedGoalType,
                     answers: answers
                 )
 
                 await MainActor.run {
-                    generatedPlan = plan
+                    print("✅ Plan generated successfully!")
+                    switch plan {
+                    case .project(let projectPlan):
+                        print("Vision Refined: \(projectPlan.visionRefined)")
+                        print("Power Goals: \(projectPlan.powerGoals.count)")
+                        generatedPlan = projectPlan
+                        generatedHabitPlan = nil
+                        generatedIdentityPlan = nil
+                    case .habit(let habitPlan):
+                        print("Vision Refined: \(habitPlan.visionRefined)")
+                        print("Frequency: \(habitPlan.frequency)")
+                        generatedHabitPlan = habitPlan  // Store full habit plan
+                        generatedPlan = AIGeneratedPlan(visionRefined: habitPlan.visionRefined, powerGoals: [], currentPowerGoal: GeneratedCurrentPowerGoal(goal: "", weeklyMilestones: []), anchorTask: "")
+                        generatedIdentityPlan = nil
+                    case .identity(let identityPlan):
+                        print("Vision Refined: \(identityPlan.visionRefined)")
+                        print("Identity Statement: \(identityPlan.identityStatement)")
+                        generatedIdentityPlan = identityPlan  // Store full identity plan
+                        generatedPlan = AIGeneratedPlan(visionRefined: identityPlan.identityStatement, powerGoals: [], currentPowerGoal: GeneratedCurrentPowerGoal(goal: "", weeklyMilestones: []), anchorTask: "")
+                        generatedHabitPlan = nil
+                    }
                     createTasksFromPlan()
                     currentStep = .firstTasks
                 }
             } catch {
                 await MainActor.run {
+                    print("❌ ERROR generating plan: \(error)")
                     errorMessage = error.localizedDescription
-                    // Fallback to mock data on error
-                    print("Error generating plan: \(error)")
-                    generatedPlan = createMockGeneratedPlan()
-                    createTasksFromPlan()
-                    currentStep = .firstTasks
+                    detailedError = "Failed to generate personalized plan.\n\nError: \(error.localizedDescription)\n\nPlease check your internet connection and try again."
+                    showErrorAlert = true
+
+                    // DO NOT fallback to mock data - let user know it failed
+                    // generatedPlan = createMockGeneratedPlan()
+                    // createTasksFromPlan()
+                    // currentStep = .firstTasks
                 }
             }
         }
@@ -207,7 +266,7 @@ struct OnboardingView: View {
                 weeklyMilestoneId: milestoneId,
                 goalId: goalId,
                 title: task.title,
-                description: task.description,
+                taskDescription: task.description,
                 difficulty: TaskDifficulty(rawValue: task.difficulty) ?? .medium,
                 estimatedMinutes: task.estimatedMinutes,
                 scheduledDate: Date()
@@ -223,8 +282,17 @@ struct OnboardingView: View {
             return
         }
 
-        // Convert AI-generated plan to Goal model
-        let goal = convertPlanToGoal(plan)
+        // Convert AI-generated plan to Goal model based on type
+        let goal: Goal
+        switch selectedGoalType {
+        case .project:
+            goal = convertPlanToGoal(plan)
+        case .habit:
+            goal = convertHabitPlanToGoal(plan)
+        case .identity:
+            goal = convertIdentityPlanToGoal(plan)
+        }
+
         appState.completeOnboarding(with: goal)
     }
 
@@ -258,7 +326,7 @@ struct OnboardingView: View {
                                 weeklyMilestoneId: milestoneId,
                                 goalId: goalId,
                                 title: taskData.title,
-                                description: taskData.description,
+                                taskDescription: taskData.description,
                                 difficulty: TaskDifficulty(rawValue: taskData.difficulty) ?? .medium,
                                 estimatedMinutes: taskData.estimatedMinutes,
                                 isAnchorTask: taskData.title.lowercased().contains(plan.anchorTask.lowercased().prefix(10)),
@@ -297,6 +365,7 @@ struct OnboardingView: View {
             userId: userId,
             visionText: visionText,
             visionRefined: plan.visionRefined,
+            goalType: selectedGoalType,
             isIdentityBased: false,
             status: .active,
             createdAt: Date(),
@@ -305,6 +374,282 @@ struct OnboardingView: View {
             completionPercentage: 0,
             powerGoals: powerGoals
         )
+    }
+
+    private func convertHabitPlanToGoal(_ plan: AIGeneratedPlan) -> Goal {
+        let goalId = UUID()
+        let userId = UUID()
+
+        // Parse frequency from the stored habit plan
+        let frequency: HabitFrequency
+        let weeklyGoal: Int?
+
+        if let habitPlan = generatedHabitPlan {
+            // Parse the frequency string from AI response
+            switch habitPlan.frequency.lowercased() {
+            case "daily":
+                frequency = .daily
+                weeklyGoal = 7
+            case "weekdays":
+                frequency = .weekdays
+                weeklyGoal = 5
+            case "weekends":
+                frequency = .weekends
+                weeklyGoal = 2
+            default:
+                frequency = .daily
+                weeklyGoal = habitPlan.weeklyGoal ?? 7
+            }
+        } else {
+            // Fallback to daily if no habit plan stored
+            frequency = .daily
+            weeklyGoal = 7
+        }
+
+        // Create HabitConfig with proper initialization
+        let habitConfig = HabitConfig(
+            frequency: frequency,
+            customDays: nil,
+            currentStreak: 0,
+            longestStreak: 0,
+            lastCompletedDate: nil,
+            skipHistory: [],
+            reminderTime: nil,
+            weeklyGoal: weeklyGoal
+        )
+
+        return Goal(
+            id: goalId,
+            userId: userId,
+            visionText: visionText,
+            visionRefined: plan.visionRefined,
+            goalType: .habit,
+            isIdentityBased: false,
+            status: .active,
+            createdAt: Date(),
+            targetCompletionDate: nil,  // Habits don't have end dates
+            currentPowerGoalIndex: 0,
+            completionPercentage: 0,
+            powerGoals: [],  // Habits don't use power goals
+            habitConfig: habitConfig,
+            identityConfig: nil
+        )
+    }
+
+    private func convertIdentityPlanToGoal(_ plan: AIGeneratedPlan) -> Goal {
+        let goalId = UUID()
+        let userId = UUID()
+
+        // Use the stored identity plan if available
+        let identityStatement: String
+        var milestones: [IdentityMilestone] = []
+
+        if let identityPlan = generatedIdentityPlan {
+            identityStatement = identityPlan.identityStatement
+
+            // Convert generated milestones to IdentityMilestone objects
+            milestones = identityPlan.milestones.map { genMilestone in
+                IdentityMilestone(
+                    title: genMilestone.title,
+                    isCompleted: false,
+                    completedDate: nil,
+                    evidenceId: nil
+                )
+            }
+        } else {
+            // Fallback
+            identityStatement = plan.visionRefined.hasPrefix("I am") ?
+                plan.visionRefined : "I am \(plan.visionRefined)"
+        }
+
+        // Create IdentityConfig with proper initialization
+        let identityConfig = IdentityConfig(
+            identityStatement: identityStatement,
+            evidenceEntries: [],
+            milestones: milestones
+        )
+
+        return Goal(
+            id: goalId,
+            userId: userId,
+            visionText: visionText,
+            visionRefined: plan.visionRefined,
+            goalType: .identity,
+            isIdentityBased: true,
+            status: .active,
+            createdAt: Date(),
+            targetCompletionDate: nil,  // Identity goals don't have end dates
+            currentPowerGoalIndex: 0,
+            completionPercentage: 0,
+            powerGoals: [],  // Identity goals don't use power goals
+            habitConfig: nil,
+            identityConfig: identityConfig
+        )
+    }
+}
+
+// MARK: - Goal Type Selection View
+
+struct GoalTypeSelectionView: View {
+    @Binding var selectedGoalType: GoalType
+    let onContinue: () -> Void
+    let onBack: () -> Void
+
+    var body: some View {
+        VStack(spacing: 24) {
+            // Header
+            HStack {
+                Button {
+                    onBack()
+                } label: {
+                    HStack(spacing: 4) {
+                        Ph.caretLeft.regular
+                            .frame(width: 16, height: 16)
+                        Text("Back")
+                    }
+                    .foregroundColor(.momentumSecondaryText)
+                }
+
+                Spacer()
+            }
+            .padding(.horizontal)
+            .padding(.top)
+
+            ScrollView {
+                VStack(spacing: 32) {
+                    // Title
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Choose your goal type")
+                            .font(MomentumFont.heading(28))
+                            .foregroundColor(.white)
+
+                        Text("Different goals need different approaches")
+                            .font(MomentumFont.body(17))
+                            .foregroundColor(.momentumSecondaryText)
+                    }
+                    .padding(.horizontal)
+
+                    // Goal Type Cards
+                    VStack(spacing: 16) {
+                        goalTypeCard(
+                            type: .project,
+                            icon: "target",
+                            title: "Project Goal",
+                            description: "12-month journey with structured milestones",
+                            examples: "Launch a business, Build an app, Write a book"
+                        )
+
+                        goalTypeCard(
+                            type: .habit,
+                            icon: "repeat",
+                            title: "Daily Habit",
+                            description: "Build consistency with daily check-ins and streak tracking",
+                            examples: "Exercise daily, Read every morning, Practice meditation"
+                        )
+
+                        goalTypeCard(
+                            type: .identity,
+                            icon: "person.fill.badge.plus",
+                            title: "Identity Goal",
+                            description: "Become someone through evidence collection",
+                            examples: "Become a pianist, Become a runner, Become an artist"
+                        )
+                    }
+                    .padding(.horizontal)
+                }
+            }
+
+            // Continue Button
+            Button(action: onContinue) {
+                HStack {
+                    Text("Continue")
+                    Ph.arrowRight.regular
+                        .frame(width: 16, height: 16)
+                }
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .padding(.horizontal)
+            .padding(.bottom, 32)
+        }
+    }
+
+    private func goalTypeCard(type: GoalType, icon: String, title: String, description: String, examples: String) -> some View {
+        Button {
+            selectedGoalType = type
+        } label: {
+            HStack(spacing: 16) {
+                // Icon
+                ZStack {
+                    if selectedGoalType == type {
+                        Circle()
+                            .fill(MomentumGradients.primary)
+                            .frame(width: 56, height: 56)
+                    } else {
+                        Circle()
+                            .fill(Color.white.opacity(0.1))
+                            .frame(width: 56, height: 56)
+                    }
+
+                    iconForType(icon)
+                        .color(.white)
+                        .frame(width: 24, height: 24)
+                }
+
+                // Content
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(title)
+                        .font(MomentumFont.bodyMedium(18))
+                        .foregroundColor(.white)
+
+                    Text(description)
+                        .font(MomentumFont.body(14))
+                        .foregroundColor(.momentumSecondaryText)
+                        .lineLimit(2)
+
+                    Text(examples)
+                        .font(MomentumFont.body(12))
+                        .foregroundColor(.momentumViolet)
+                        .italic()
+                }
+
+                Spacer()
+
+                // Selection indicator
+                (selectedGoalType == type ? Ph.checkCircle.fill : Ph.circle.regular)
+                    .color(selectedGoalType == type ? .momentumViolet : .momentumSecondaryText)
+                    .frame(width: 24, height: 24)
+            }
+            .padding(20)
+            .background(
+                selectedGoalType == type
+                    ? Color.momentumViolet.opacity(0.15)
+                    : Color.white.opacity(0.05)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(
+                        selectedGoalType == type
+                            ? Color.momentumViolet
+                            : Color.clear,
+                        lineWidth: 2
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func iconForType(_ icon: String) -> Image {
+        switch icon {
+        case "target":
+            return Ph.target.regular
+        case "repeat":
+            return Ph.repeat.regular
+        case "person.fill.badge.plus":
+            return Ph.userPlus.fill
+        default:
+            return Ph.target.regular
+        }
     }
 }
 
@@ -331,9 +676,9 @@ struct WelcomeView: View {
                         .frame(width: 120, height: 120)
                         .shadow(color: .momentumViolet.opacity(0.5), radius: 30, y: 10)
 
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 50))
-                        .foregroundColor(.white)
+                    Ph.sparkle.regular
+                        .color(.white)
+                        .frame(width: 50, height: 50)
                         .rotationEffect(.degrees(showAnimation ? 0 : -10))
                         .animation(.easeInOut(duration: 1).repeatForever(autoreverses: true), value: showAnimation)
                 }
@@ -372,10 +717,10 @@ struct HowItWorksView: View {
 
     @State private var currentPage = 0
 
-    let benefits: [(String, String, String)] = [
-        ("mountain.2.fill", "Start with your vision", "Dream big. We'll handle the breakdown."),
-        ("checklist", "Get your daily tasks", "Three doable tasks every day. No overwhelm."),
-        ("chart.line.uptrend.xyaxis", "Watch progress compound", "Small wins add up. You'll see exactly how far you've come.")
+    let benefits: [(Int, String, String)] = [
+        (0, "Start with your vision", "Dream big. We'll handle the breakdown."),
+        (1, "Get your daily tasks", "Three doable tasks every day. No overwhelm."),
+        (2, "Watch progress compound", "Small wins add up. You'll see exactly how far you've come.")
     ]
 
     var body: some View {
@@ -395,9 +740,8 @@ struct HowItWorksView: View {
                     VStack(spacing: 32) {
                         Spacer()
 
-                        Image(systemName: benefits[index].0)
-                            .font(.system(size: 80))
-                            .foregroundStyle(MomentumGradients.primary)
+                        benefitIcon(for: benefits[index].0)
+                            .frame(width: 80, height: 80)
 
                         VStack(spacing: 12) {
                             Text(benefits[index].1)
@@ -426,6 +770,24 @@ struct HowItWorksView: View {
             .padding(.bottom, 60)
         }
     }
+
+    @ViewBuilder
+    private func benefitIcon(for index: Int) -> some View {
+        switch index {
+        case 0:
+            Ph.mountains.fill
+                .foregroundStyle(MomentumGradients.primary)
+        case 1:
+            Ph.listChecks.regular
+                .foregroundStyle(MomentumGradients.primary)
+        case 2:
+            Ph.chartLineUp.regular
+                .foregroundStyle(MomentumGradients.primary)
+        default:
+            Ph.target.regular
+                .foregroundStyle(MomentumGradients.primary)
+        }
+    }
 }
 
 // MARK: - Vision Input View
@@ -444,7 +806,8 @@ struct VisionInputView: View {
                     onBack()
                 } label: {
                     HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
+                        Ph.caretLeft.regular
+                            .frame(width: 16, height: 16)
                         Text("Back")
                     }
                     .foregroundColor(.momentumSecondaryText)
@@ -512,7 +875,8 @@ struct VisionInputView: View {
             Button(action: onContinue) {
                 HStack {
                     Text("Continue")
-                    Image(systemName: "arrow.right")
+                    Ph.arrowRight.regular
+                        .frame(width: 16, height: 16)
                 }
             }
             .buttonStyle(PrimaryButtonStyle())
@@ -555,9 +919,9 @@ struct LoadingQuestionsView: View {
                     .frame(width: 80, height: 80)
                     .shadow(color: .momentumViolet.opacity(0.5), radius: 20, y: 10)
 
-                Image(systemName: "sparkles")
-                    .font(.system(size: 36))
-                    .foregroundColor(.white)
+                Ph.sparkle.regular
+                    .color(.white)
+                    .frame(width: 36, height: 36)
                     .rotationEffect(.degrees(animationRotation))
             }
 
@@ -591,6 +955,7 @@ struct DynamicQuestionnaireView: View {
     @State private var currentQuestionIndex = 0
     @State private var questionAnswers: [String: String] = [:]
     @State private var textInputAnswer: String = ""
+    @State private var showOtherTextField: Bool = false
     @FocusState private var isTextFieldFocused: Bool
 
     var currentQuestion: OnboardingQuestion {
@@ -634,9 +999,9 @@ struct DynamicQuestionnaireView: View {
                         .fill(MomentumGradients.primary)
                         .frame(width: 60, height: 60)
 
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 28))
-                        .foregroundColor(.white)
+                    Ph.sparkle.regular
+                        .color(.white)
+                        .frame(width: 28, height: 28)
                 }
 
                 Text(currentQuestion.question)
@@ -652,7 +1017,7 @@ struct DynamicQuestionnaireView: View {
                     // Multiple choice options
                     ForEach(options, id: \.self) { option in
                         Button {
-                            selectAnswer(option)
+                            handleOptionSelection(option)
                         } label: {
                             HStack {
                                 Circle()
@@ -671,10 +1036,10 @@ struct DynamicQuestionnaireView: View {
                         }
                     }
 
-                    if currentQuestion.allowsTextInput {
-                        // Text input option
+                    // Show text field when "Other" is selected OR if allowsTextInput is true
+                    if showOtherTextField || currentQuestion.allowsTextInput {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Or type your answer:")
+                            Text(showOtherTextField ? "Please specify:" : "Or type your answer:")
                                 .font(MomentumFont.body(14))
                                 .foregroundColor(.momentumSecondaryText)
 
@@ -709,10 +1074,13 @@ struct DynamicQuestionnaireView: View {
                     Button {
                         withAnimation {
                             currentQuestionIndex -= 1
+                            showOtherTextField = false
+                            textInputAnswer = ""
                         }
                     } label: {
                         HStack {
-                            Image(systemName: "chevron.left")
+                            Ph.caretLeft.regular
+                                .frame(width: 16, height: 16)
                             Text("Back")
                         }
                         .foregroundColor(.momentumSecondaryText)
@@ -722,7 +1090,8 @@ struct DynamicQuestionnaireView: View {
                         onBack()
                     } label: {
                         HStack {
-                            Image(systemName: "chevron.left")
+                            Ph.caretLeft.regular
+                                .frame(width: 16, height: 16)
                             Text("Back")
                         }
                         .foregroundColor(.momentumSecondaryText)
@@ -737,7 +1106,8 @@ struct DynamicQuestionnaireView: View {
                     } label: {
                         HStack {
                             Text("Next")
-                            Image(systemName: "arrow.right")
+                            Ph.arrowRight.regular
+                                .frame(width: 16, height: 16)
                         }
                         .foregroundColor(.momentumViolet)
                         .font(MomentumFont.bodyMedium(16))
@@ -754,6 +1124,16 @@ struct DynamicQuestionnaireView: View {
         }
     }
 
+    private func handleOptionSelection(_ option: String) {
+        // Check if this is an "Other" option
+        if option.lowercased().contains("other") {
+            showOtherTextField = true
+            isTextFieldFocused = true
+        } else {
+            selectAnswer(option)
+        }
+    }
+
     private func selectAnswer(_ answer: String) {
         // Store answer with question as key
         questionAnswers[currentQuestion.question] = answer
@@ -761,8 +1141,9 @@ struct DynamicQuestionnaireView: View {
         // Also store in legacy format for backward compatibility
         storeInLegacyFormat(question: currentQuestion.question, answer: answer)
 
-        // Reset text input
+        // Reset text input and other field state
         textInputAnswer = ""
+        showOtherTextField = false
 
         nextQuestion()
     }
@@ -823,9 +1204,9 @@ struct GeneratingView: View {
                     .frame(width: 100, height: 100)
                     .shadow(color: .momentumViolet.opacity(0.5), radius: 30, y: 10)
 
-                Image(systemName: "sparkles")
-                    .font(.system(size: 44))
-                    .foregroundColor(.white)
+                Ph.sparkle.regular
+                    .color(.white)
+                    .frame(width: 44, height: 44)
                     .rotationEffect(.degrees(animationRotation))
             }
 
@@ -838,14 +1219,16 @@ struct GeneratingView: View {
                 ForEach(0..<steps.count, id: \.self) { index in
                     HStack(spacing: 12) {
                         if index < currentStep {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.momentumGreenStart)
+                            Ph.checkCircle.fill
+                                .color(.momentumGreenStart)
+                                .frame(width: 20, height: 20)
                         } else if index == currentStep {
                             ProgressView()
                                 .tint(.momentumViolet)
                         } else {
-                            Image(systemName: "circle")
-                                .foregroundColor(.momentumSecondaryText)
+                            Ph.circle.regular
+                                .color(.momentumSecondaryText)
+                                .frame(width: 20, height: 20)
                         }
 
                         Text(steps[index])
@@ -944,7 +1327,8 @@ struct FirstTasksView: View {
                 Button(action: onStartToday) {
                     HStack {
                         Text("Start Today")
-                        Image(systemName: "arrow.right")
+                        Ph.arrowRight.regular
+                            .frame(width: 16, height: 16)
                     }
                 }
                 .buttonStyle(PrimaryButtonStyle())
@@ -977,8 +1361,8 @@ struct FirstTasksView: View {
 
                 HStack(spacing: 8) {
                     HStack(spacing: 4) {
-                        Image(systemName: "clock")
-                            .font(.system(size: 12))
+                        Ph.clock.regular
+                            .frame(width: 12, height: 12)
                         Text("\(task.estimatedMinutes) min")
                     }
                     .font(MomentumFont.body(13))

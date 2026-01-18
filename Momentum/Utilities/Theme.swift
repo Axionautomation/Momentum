@@ -22,6 +22,11 @@ extension Color {
     static let momentumLightBackground = Color(hex: "F9FAFB")
     static let momentumDarkBackground = Color(hex: "0F172A")
 
+    // Opaque Surface Colors (Design Guide Compliant)
+    static let momentumSurfacePrimary = Color(hex: "0E0F12")      // Near-black primary surface
+    static let momentumSurfaceSecondary = Color(hex: "15171C")    // Slightly lighter surface
+    static let momentumSurfaceDivider = Color(hex: "1F2228")      // Dividers and outlines
+
     // Text Colors
     static let momentumPrimaryText = Color.white
     static let momentumSecondaryText = Color(hex: "94A3B8")
@@ -109,10 +114,54 @@ struct MomentumFont {
 }
 
 // MARK: - View Modifiers
+
+/// Opaque surface modifier (replaces FrostedGlassModifier)
+/// Uses dark opaque colors instead of Apple's blur materials per design guide
+struct OpaqueSurfaceModifier: ViewModifier {
+    var level: SurfaceLevel = .primary
+    var cornerRadius: CGFloat = 12
+
+    enum SurfaceLevel {
+        case primary      // Darkest (#0E0F12)
+        case secondary    // Medium (#15171C)
+        case elevated     // Same as secondary but with more shadow
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .background(backgroundColor)
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .strokeBorder(Color.momentumSurfaceDivider, lineWidth: 0.5)
+            )
+            .shadow(
+                color: .black.opacity(0.3),
+                radius: level == .elevated ? 20 : 8,
+                y: level == .elevated ? 10 : 4
+            )
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+    }
+
+    private var backgroundColor: Color {
+        switch level {
+        case .primary:
+            return .momentumSurfacePrimary
+        case .secondary, .elevated:
+            return .momentumSurfaceSecondary
+        }
+    }
+}
+
+/// Legacy FrostedGlassModifier (kept for backward compatibility, now uses opaque surfaces)
 struct FrostedGlassModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .background(.ultraThinMaterial)
+            .background(Color.momentumSurfaceSecondary)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(Color.momentumSurfaceDivider, lineWidth: 0.5)
+            )
+            .shadow(color: .black.opacity(0.2), radius: 10, y: 5)
             .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 }
@@ -174,6 +223,12 @@ struct SecondaryButtonStyle: ButtonStyle {
 }
 
 extension View {
+    /// Apply opaque surface styling (design guide compliant)
+    func opaqueSurface(level: OpaqueSurfaceModifier.SurfaceLevel = .secondary, cornerRadius: CGFloat = 12) -> some View {
+        modifier(OpaqueSurfaceModifier(level: level, cornerRadius: cornerRadius))
+    }
+
+    /// Legacy frosted glass method (now uses opaque surfaces)
     func frostedGlass() -> some View {
         modifier(FrostedGlassModifier())
     }

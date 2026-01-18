@@ -87,31 +87,38 @@ struct Goal: Identifiable, Codable {
     var userId: UUID
     var visionText: String
     var visionRefined: String?
-    var isIdentityBased: Bool
+    var goalType: GoalType
+    var isIdentityBased: Bool                // Kept for backward compatibility
     var status: GoalStatus
     var createdAt: Date
     var targetCompletionDate: Date?
     var currentPowerGoalIndex: Int
     var completionPercentage: Double
     var powerGoals: [PowerGoal]
+    var habitConfig: HabitConfig?            // Only used for habit goals
+    var identityConfig: IdentityConfig?      // Only used for identity goals
 
     init(
         id: UUID = UUID(),
         userId: UUID,
         visionText: String,
         visionRefined: String? = nil,
+        goalType: GoalType = .project,
         isIdentityBased: Bool = false,
         status: GoalStatus = .active,
         createdAt: Date = Date(),
         targetCompletionDate: Date? = nil,
         currentPowerGoalIndex: Int = 0,
         completionPercentage: Double = 0,
-        powerGoals: [PowerGoal] = []
+        powerGoals: [PowerGoal] = [],
+        habitConfig: HabitConfig? = nil,
+        identityConfig: IdentityConfig? = nil
     ) {
         self.id = id
         self.userId = userId
         self.visionText = visionText
         self.visionRefined = visionRefined
+        self.goalType = goalType
         self.isIdentityBased = isIdentityBased
         self.status = status
         self.createdAt = createdAt
@@ -119,6 +126,8 @@ struct Goal: Identifiable, Codable {
         self.currentPowerGoalIndex = currentPowerGoalIndex
         self.completionPercentage = completionPercentage
         self.powerGoals = powerGoals
+        self.habitConfig = habitConfig
+        self.identityConfig = identityConfig
     }
 }
 
@@ -126,6 +135,12 @@ enum GoalStatus: String, Codable {
     case active
     case completed
     case archived
+}
+
+enum GoalType: String, Codable {
+    case project      // 12-month structured goal
+    case habit        // Ongoing lifestyle habit
+    case identity     // Identity-based with evidence collection
 }
 
 // MARK: - Power Goal Model (12 per Goal)
@@ -169,6 +184,146 @@ enum PowerGoalStatus: String, Codable {
     case completed
 }
 
+// MARK: - Habit Models
+
+enum HabitFrequency: String, Codable {
+    case daily
+    case weekdays
+    case weekends
+    case custom
+}
+
+struct HabitConfig: Codable {
+    var frequency: HabitFrequency
+    var customDays: [Int]?           // 0=Sunday, 6=Saturday (only used if frequency is custom)
+    var currentStreak: Int
+    var longestStreak: Int
+    var lastCompletedDate: Date?
+    var skipHistory: [Date]
+    var reminderTime: Date?
+    var weeklyGoal: Int?             // e.g., "Do this 5x per week"
+
+    init(
+        frequency: HabitFrequency = .daily,
+        customDays: [Int]? = nil,
+        currentStreak: Int = 0,
+        longestStreak: Int = 0,
+        lastCompletedDate: Date? = nil,
+        skipHistory: [Date] = [],
+        reminderTime: Date? = nil,
+        weeklyGoal: Int? = nil
+    ) {
+        self.frequency = frequency
+        self.customDays = customDays
+        self.currentStreak = currentStreak
+        self.longestStreak = longestStreak
+        self.lastCompletedDate = lastCompletedDate
+        self.skipHistory = skipHistory
+        self.reminderTime = reminderTime
+        self.weeklyGoal = weeklyGoal
+    }
+}
+
+struct HabitCheckIn: Identifiable, Codable {
+    let id: UUID
+    var habitGoalId: UUID
+    var scheduledDate: Date
+    var isCompleted: Bool
+    var completedAt: Date?
+    var notes: String?
+    var skipped: Bool
+
+    init(
+        id: UUID = UUID(),
+        habitGoalId: UUID,
+        scheduledDate: Date,
+        isCompleted: Bool = false,
+        completedAt: Date? = nil,
+        notes: String? = nil,
+        skipped: Bool = false
+    ) {
+        self.id = id
+        self.habitGoalId = habitGoalId
+        self.scheduledDate = scheduledDate
+        self.isCompleted = isCompleted
+        self.completedAt = completedAt
+        self.notes = notes
+        self.skipped = skipped
+    }
+}
+
+// MARK: - Identity Models
+
+enum EvidenceMood: String, Codable {
+    case struggled
+    case okay
+    case good
+    case great
+}
+
+struct EvidenceEntry: Identifiable, Codable {
+    let id: UUID
+    var date: Date
+    var description: String
+    var category: String?
+    var photoURL: String?
+    var mood: EvidenceMood
+
+    init(
+        id: UUID = UUID(),
+        date: Date = Date(),
+        description: String,
+        category: String? = nil,
+        photoURL: String? = nil,
+        mood: EvidenceMood = .good
+    ) {
+        self.id = id
+        self.date = date
+        self.description = description
+        self.category = category
+        self.photoURL = photoURL
+        self.mood = mood
+    }
+}
+
+struct IdentityMilestone: Identifiable, Codable {
+    let id: UUID
+    var title: String
+    var isCompleted: Bool
+    var completedDate: Date?
+    var evidenceId: UUID?            // Link to evidence entry that completed this
+
+    init(
+        id: UUID = UUID(),
+        title: String,
+        isCompleted: Bool = false,
+        completedDate: Date? = nil,
+        evidenceId: UUID? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.isCompleted = isCompleted
+        self.completedDate = completedDate
+        self.evidenceId = evidenceId
+    }
+}
+
+struct IdentityConfig: Codable {
+    var identityStatement: String    // "I am a piano player"
+    var evidenceEntries: [EvidenceEntry]
+    var milestones: [IdentityMilestone]
+
+    init(
+        identityStatement: String,
+        evidenceEntries: [EvidenceEntry] = [],
+        milestones: [IdentityMilestone] = []
+    ) {
+        self.identityStatement = identityStatement
+        self.evidenceEntries = evidenceEntries
+        self.milestones = milestones
+    }
+}
+
 // MARK: - Weekly Milestone Model (5 per Power Goal)
 struct WeeklyMilestone: Identifiable, Codable {
     let id: UUID
@@ -210,7 +365,7 @@ struct MomentumTask: Identifiable, Codable {
     var weeklyMilestoneId: UUID
     var goalId: UUID
     var title: String
-    var description: String?
+    var taskDescription: String?
     var difficulty: TaskDifficulty
     var estimatedMinutes: Int
     var isAnchorTask: Bool
@@ -219,13 +374,14 @@ struct MomentumTask: Identifiable, Codable {
     var completedAt: Date?
     var calendarEventId: String?
     var microsteps: [Microstep]
+    var notes: TaskNotes
 
     init(
         id: UUID = UUID(),
         weeklyMilestoneId: UUID,
         goalId: UUID,
         title: String,
-        description: String? = nil,
+        taskDescription: String? = nil,
         difficulty: TaskDifficulty,
         estimatedMinutes: Int,
         isAnchorTask: Bool = false,
@@ -233,13 +389,14 @@ struct MomentumTask: Identifiable, Codable {
         status: TaskStatus = .pending,
         completedAt: Date? = nil,
         calendarEventId: String? = nil,
-        microsteps: [Microstep] = []
+        microsteps: [Microstep] = [],
+        notes: TaskNotes = TaskNotes()
     ) {
         self.id = id
         self.weeklyMilestoneId = weeklyMilestoneId
         self.goalId = goalId
         self.title = title
-        self.description = description
+        self.taskDescription = taskDescription
         self.difficulty = difficulty
         self.estimatedMinutes = estimatedMinutes
         self.isAnchorTask = isAnchorTask
@@ -248,6 +405,7 @@ struct MomentumTask: Identifiable, Codable {
         self.completedAt = completedAt
         self.calendarEventId = calendarEventId
         self.microsteps = microsteps
+        self.notes = notes
     }
 }
 
@@ -455,5 +613,164 @@ struct GeneratedTask: Codable {
         case difficulty
         case estimatedMinutes = "estimated_minutes"
         case description
+    }
+}
+
+// MARK: - Habit AI Response Models
+struct AIGeneratedHabitPlan: Codable {
+    let visionRefined: String
+    let frequency: String
+    let habitDescription: String
+    let weeklyGoal: Int?
+    let milestones: [GeneratedHabitMilestone]
+
+    enum CodingKeys: String, CodingKey {
+        case visionRefined = "vision_refined"
+        case frequency
+        case habitDescription = "habit_description"
+        case weeklyGoal = "weekly_goal"
+        case milestones
+    }
+}
+
+struct GeneratedHabitMilestone: Codable {
+    let streak: Int
+    let title: String
+}
+
+// MARK: - Identity AI Response Models
+struct AIGeneratedIdentityPlan: Codable {
+    let visionRefined: String
+    let identityStatement: String
+    let isComplex: Bool
+    let evidenceCategories: [String]
+    let milestones: [GeneratedIdentityMilestone]
+    let dailyTaskDescription: String?
+
+    enum CodingKeys: String, CodingKey {
+        case visionRefined = "vision_refined"
+        case identityStatement = "identity_statement"
+        case isComplex = "is_complex"
+        case evidenceCategories = "evidence_categories"
+        case milestones
+        case dailyTaskDescription = "daily_task_description"
+    }
+}
+
+struct GeneratedIdentityMilestone: Codable {
+    let title: String
+    let category: String?
+}
+
+// MARK: - Unified AI Response
+enum AIGoalPlanResponse {
+    case project(AIGeneratedPlan)
+    case habit(AIGeneratedHabitPlan)
+    case identity(AIGeneratedIdentityPlan)
+}
+
+// MARK: - Task Notes & Knowledge Base
+
+struct TaskNotes: Codable, Equatable {
+    var conversationHistory: [ConversationMessage]
+    var researchFindings: [ResearchFinding]
+    var userBrainstorms: [BrainstormNote]
+    var lastUpdated: Date
+
+    init() {
+        self.conversationHistory = []
+        self.researchFindings = []
+        self.userBrainstorms = []
+        self.lastUpdated = Date()
+    }
+}
+
+struct ConversationMessage: Identifiable, Codable, Equatable {
+    let id: UUID
+    let role: MessageRole
+    let content: String
+    let timestamp: Date
+    let metadata: MessageMetadata?
+
+    init(
+        id: UUID = UUID(),
+        role: MessageRole,
+        content: String,
+        timestamp: Date = Date(),
+        metadata: MessageMetadata? = nil
+    ) {
+        self.id = id
+        self.role = role
+        self.content = content
+        self.timestamp = timestamp
+        self.metadata = metadata
+    }
+}
+
+enum MessageRole: String, Codable {
+    case user
+    case assistant
+    case system
+}
+
+struct MessageMetadata: Codable, Equatable {
+    let messageType: MessageType
+    let relatedResearchId: UUID?
+
+    enum MessageType: String, Codable {
+        case clarifyingQuestion
+        case researchRequest
+        case researchResult
+        case generalHelp
+    }
+}
+
+struct ResearchFinding: Identifiable, Codable, Equatable {
+    let id: UUID
+    let query: String
+    let clarifyingQA: [QAPair]
+    let searchResults: String
+    let timestamp: Date
+    let wasAutoSaved: Bool
+
+    init(
+        id: UUID = UUID(),
+        query: String,
+        clarifyingQA: [QAPair] = [],
+        searchResults: String,
+        timestamp: Date = Date(),
+        wasAutoSaved: Bool = true
+    ) {
+        self.id = id
+        self.query = query
+        self.clarifyingQA = clarifyingQA
+        self.searchResults = searchResults
+        self.timestamp = timestamp
+        self.wasAutoSaved = wasAutoSaved
+    }
+}
+
+// Helper struct for Q&A pairs (Codable compatible)
+struct QAPair: Codable, Equatable {
+    let question: String
+    let answer: String
+}
+
+struct BrainstormNote: Identifiable, Codable, Equatable {
+    let id: UUID
+    var content: String
+    let createdAt: Date
+    var lastModified: Date
+
+    init(
+        id: UUID = UUID(),
+        content: String,
+        createdAt: Date = Date(),
+        lastModified: Date = Date()
+    ) {
+        self.id = id
+        self.content = content
+        self.createdAt = createdAt
+        self.lastModified = lastModified
     }
 }

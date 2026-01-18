@@ -53,11 +53,13 @@ class GroqService: ObservableObject {
         let temperature: Double
         let maxTokens: Int?
         let responseFormat: ResponseFormat?
+        let tools: [Tool]?
 
         enum CodingKeys: String, CodingKey {
             case model, messages, temperature
             case maxTokens = "max_tokens"
             case responseFormat = "response_format"
+            case tools
         }
 
         struct Message: Codable {
@@ -67,6 +69,10 @@ class GroqService: ObservableObject {
 
         struct ResponseFormat: Codable {
             let type: String // "json_object" for JSON mode
+        }
+
+        struct Tool: Codable {
+            let type: String // "browser_search"
         }
     }
 
@@ -124,40 +130,41 @@ class GroqService: ObservableObject {
             messages: messages,
             temperature: temperature,
             maxTokens: maxTokens,
-            responseFormat: requireJSON ? GroqRequest.ResponseFormat(type: "json_object") : nil
+            responseFormat: requireJSON ? GroqRequest.ResponseFormat(type: "json_object") : nil,
+            tools: nil  // No tools for standard requests
         )
 
-        do {
-            let encoder = JSONEncoder()
-            request.httpBody = try encoder.encode(groqRequest)
+        let encoder = JSONEncoder()
+        request.httpBody = try encoder.encode(groqRequest)
 
-            let (data, response) = try await URLSession.shared.data(for: request)
+        print("📡 Making Groq API request...")
+        let (data, response) = try await URLSession.shared.data(for: request)
 
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw GroqError.invalidResponse
-            }
-
-            guard httpResponse.statusCode == 200 else {
-                if let errorString = String(data: data, encoding: .utf8) {
-                    throw GroqError.apiError("Status \(httpResponse.statusCode): \(errorString)")
-                }
-                throw GroqError.apiError("Status code: \(httpResponse.statusCode)")
-            }
-
-            let decoder = JSONDecoder()
-            let groqResponse = try decoder.decode(GroqResponse.self, from: data)
-
-            guard let content = groqResponse.choices.first?.message.content else {
-                throw GroqError.invalidResponse
-            }
-
-            return content
-
-        } catch let error as GroqError {
-            throw error
-        } catch {
-            throw GroqError.networkError(error)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            print("❌ Invalid HTTP response")
+            throw GroqError.invalidResponse
         }
+
+        print("📊 HTTP Status: \(httpResponse.statusCode)")
+
+        guard httpResponse.statusCode == 200 else {
+            if let errorString = String(data: data, encoding: .utf8) {
+                print("❌ API Error: \(errorString)")
+                throw GroqError.apiError("Status \(httpResponse.statusCode): \(errorString)")
+            }
+            throw GroqError.apiError("Status code: \(httpResponse.statusCode)")
+        }
+
+        let decoder = JSONDecoder()
+        let groqResponse = try decoder.decode(GroqResponse.self, from: data)
+
+        guard let content = groqResponse.choices.first?.message.content else {
+            print("❌ No content in response")
+            throw GroqError.invalidResponse
+        }
+
+        print("✅ Received response (\(content.count) characters)")
+        return content
     }
 
     // MARK: - Generate Personalized Onboarding Questions
@@ -178,6 +185,13 @@ class GroqService: ObservableObject {
         - What this identity means to them
         - Any concrete goals this leads to
         - What's holding them back
+
+        IMPORTANT:
+        - Make questions specific to their exact vision domain
+        - For multiple choice, provide 3-4 specific options
+        - Set "allowsTextInput" to true if you want to also allow custom text input
+        - DO NOT include "Other (please specify)" as an option - use allowsTextInput instead
+        - Keep options concise and relevant
 
         Be warm, encouraging, and specific. Each question should help create a better action plan.
 
@@ -242,10 +256,32 @@ class GroqService: ObservableObject {
 
     func generateGoalPlan(
         visionText: String,
+        goalType: GoalType = .project,
+        answers: OnboardingAnswers
+    ) async throws -> AIGoalPlanResponse {
+        switch goalType {
+        case .project:
+            let plan = try await generateProjectPlan(visionText: visionText, answers: answers)
+            return .project(plan)
+        case .habit:
+            let plan = try await generateHabitPlan(visionText: visionText, answers: answers)
+            return .habit(plan)
+        case .identity:
+            let plan = try await generateIdentityPlan(visionText: visionText, answers: answers)
+            return .identity(plan)
+        }
+    }
+
+    // MARK: - Project Plan Generation
+
+    private func generateProjectPlan(
+        visionText: String,
         answers: OnboardingAnswers
     ) async throws -> AIGeneratedPlan {
         let systemPrompt = """
-        You are Momentum's AI coach. Generate a structured goal achievement plan using the Dan Martell framework combined with James Clear's 1% improvement philosophy.
+        You are Momentum's AI coach. Generate a HYPER-PERSONALIZED goal achievement plan using the Dan Martell framework combined with James Clear's 1% improvement philosophy.
+
+        CRITICAL: The plan MUST be 100% specific to the user's EXACT vision. DO NOT use generic examples or templates.
 
         Framework:
         1. North Star Vision - One SMART annual goal (refined from user's vision)
@@ -258,13 +294,27 @@ class GroqService: ObservableObject {
         - MEDIUM (30 min): Meaningful progress on the goal
         - HARD (45 min): Stretching challenge that's still achievable
 
+        PERSONALIZATION REQUIREMENTS:
+        - Every task must directly relate to their SPECIFIC vision
+        - Use their exact context (experience level, time available, concerns)
+        - Make tasks actionable with specific details (not "research competitors" but "research 3 [specific type] competitors in [specific niche]")
+        - Reference their actual timeline and adjust pace accordingly
+
         Be encouraging, specific, and action-oriented. Use the user's experience level and available time to create realistic, achievable tasks.
 
-        Return ONLY valid JSON matching this exact structure:
+        CRITICAL JSON FORMATTING RULES:
+        - Return ONLY valid JSON with NO additional text
+        - Ensure all brackets and braces are properly closed
+        - Use double quotes for all keys and string values
+        - No trailing commas
+        - The anchor_task field is a simple string at the root level
+
+        Return ONLY valid JSON matching this EXACT structure:
         {
           "vision_refined": "SMART version of the user's vision",
           "power_goals": [
-            {"month": 1, "goal": "Title", "description": "What this achieves"}
+            {"month": 1, "goal": "Title", "description": "What this achieves"},
+            {"month": 2, "goal": "Title", "description": "What this achieves"}
           ],
           "current_power_goal": {
             "goal": "Month 1 title",
@@ -292,19 +342,30 @@ class GroqService: ObservableObject {
         }
 
         Generate all 12 Power Goals, and for Power Goal #1, create 5 weekly milestones with 21 daily tasks (3 per day for 7 days).
+
+        VERIFY: Before returning, ensure your JSON is valid and properly closed.
         """
 
         let userPrompt = """
-        Vision: "\(visionText)"
+        USER'S SPECIFIC VISION: "\(visionText)"
 
-        User Background:
+        USER CONTEXT:
         - Experience Level: \(answers.experienceLevel.isEmpty ? "Not specified" : answers.experienceLevel)
         - Weekly Time Available: \(answers.weeklyHours.isEmpty ? "Not specified" : answers.weeklyHours)
         - Target Timeline: \(answers.timeline.isEmpty ? "1 year" : answers.timeline)
         - Main Concern: \(answers.biggestConcern.isEmpty ? "Getting started" : answers.biggestConcern)
         - Passions/Interests: \(answers.passions.isEmpty ? "Not specified" : answers.passions)
+        - Additional Context: \(answers.identityMeaning.isEmpty ? "Not specified" : answers.identityMeaning)
 
-        Generate a complete, personalized action plan that transforms this vision into daily tasks.
+        CRITICAL INSTRUCTIONS:
+        1. Read the vision carefully - this is about "\(visionText)", NOT about consulting or business unless explicitly stated
+        2. Every single task must be 100% relevant to THIS SPECIFIC vision
+        3. Use concrete, actionable language specific to their domain
+        4. Adjust task complexity based on their experience level
+        5. Fit the pace to their available time and timeline
+
+        Generate a complete, HYPER-PERSONALIZED action plan that transforms THIS EXACT vision into daily tasks.
+        DO NOT use generic templates or examples from other domains.
         """
 
         let responseText = try await makeRequest(
@@ -315,8 +376,38 @@ class GroqService: ObservableObject {
             requireJSON: true
         )
 
+        // Clean up the JSON response (fix common AI formatting errors)
+        var cleanedJSON = responseText.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Fix common malformed JSON patterns from AI
+        // Fix: "anchor_task",":", "value"] -> "anchor_task": "value"
+        cleanedJSON = cleanedJSON.replacingOccurrences(
+            of: "\"anchor_task\"\\s*,\\s*\":\"\\s*,\\s*\"([^\"]+)\"\\s*\\]",
+            with: "\"anchor_task\": \"$1\"",
+            options: .regularExpression
+        )
+
+        // Fix: "anchor_task",":", -> "anchor_task":
+        cleanedJSON = cleanedJSON.replacingOccurrences(of: "\"anchor_task\",\":\",", with: "\"anchor_task\":")
+        cleanedJSON = cleanedJSON.replacingOccurrences(of: "\"anchor_task\", \":\",", with: "\"anchor_task\":")
+        cleanedJSON = cleanedJSON.replacingOccurrences(of: "\"anchor_task\" , \":\" ,", with: "\"anchor_task\":")
+
+        // Remove any trailing commas before closing brackets
+        cleanedJSON = cleanedJSON.replacingOccurrences(of: ",\\s*}", with: "}", options: .regularExpression)
+        cleanedJSON = cleanedJSON.replacingOccurrences(of: ",\\s*]", with: "]", options: .regularExpression)
+
+        // Ensure proper closing: }}} should be }}
+        cleanedJSON = cleanedJSON.replacingOccurrences(of: "}}}", with: "}}")
+
+        // Fix missing closing brace if needed
+        let openBraces = cleanedJSON.filter { $0 == "{" }.count
+        let closeBraces = cleanedJSON.filter { $0 == "}" }.count
+        if openBraces > closeBraces {
+            cleanedJSON += String(repeating: "}", count: openBraces - closeBraces)
+        }
+
         // Parse JSON response
-        guard let data = responseText.data(using: .utf8) else {
+        guard let data = cleanedJSON.data(using: .utf8) else {
             throw GroqError.decodingError("Could not convert response to data")
         }
 
@@ -326,7 +417,139 @@ class GroqService: ObservableObject {
             return plan
         } catch {
             print("Decoding error: \(error)")
-            print("Response text: \(responseText)")
+            print("Original response: \(responseText)")
+            print("Cleaned response: \(cleanedJSON)")
+            throw GroqError.decodingError(error.localizedDescription)
+        }
+    }
+
+    // MARK: - Habit Plan Generation
+
+    private func generateHabitPlan(
+        visionText: String,
+        answers: OnboardingAnswers
+    ) async throws -> AIGeneratedHabitPlan {
+        let systemPrompt = """
+        You are Momentum's AI coach. Generate a simple, focused habit-building plan.
+
+        A habit goal is a SINGLE recurring action done daily (or on a schedule). Examples:
+        - "Meditate 10 minutes daily"
+        - "Read for 30 minutes every evening"
+        - "Practice piano 30 minutes daily"
+
+        Return ONLY valid JSON in this EXACT format:
+        {
+          "vision_refined": "Clear, specific habit description",
+          "frequency": "daily" | "weekdays" | "weekends",
+          "habit_description": "What exactly to do and when",
+          "weekly_goal": 7,
+          "milestones": [
+            {"streak": 7, "title": "First Week Complete"},
+            {"streak": 30, "title": "One Month Strong"},
+            {"streak": 100, "title": "100 Day Champion"}
+          ]
+        }
+
+        Keep it simple and achievable. Focus on consistency over complexity.
+        """
+
+        let userPrompt = """
+        USER'S HABIT VISION: "\(visionText)"
+
+        USER CONTEXT:
+        - Experience Level: \(answers.experienceLevel.isEmpty ? "Beginner" : answers.experienceLevel)
+        - Weekly Time Available: \(answers.weeklyHours.isEmpty ? "30 minutes daily" : answers.weeklyHours)
+
+        Generate a habit plan focused on building consistency with this specific habit.
+        """
+
+        let responseText = try await makeRequest(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            temperature: 0.7,
+            maxTokens: 800,
+            requireJSON: true
+        )
+
+        guard let data = responseText.data(using: .utf8) else {
+            throw GroqError.decodingError("Could not convert response to data")
+        }
+
+        do {
+            let decoder = JSONDecoder()
+            let plan = try decoder.decode(AIGeneratedHabitPlan.self, from: data)
+            return plan
+        } catch {
+            print("Decoding error: \(error)")
+            print("Response: \(responseText)")
+            throw GroqError.decodingError(error.localizedDescription)
+        }
+    }
+
+    // MARK: - Identity Plan Generation
+
+    private func generateIdentityPlan(
+        visionText: String,
+        answers: OnboardingAnswers
+    ) async throws -> AIGeneratedIdentityPlan {
+        let systemPrompt = """
+        You are Momentum's AI coach. Generate an identity-based goal plan.
+
+        Identity goals are about BECOMING someone, not just achieving something.
+
+        COMPLEXITY DETECTION:
+        - SIMPLE (is_complex: false): Single recurring action to embody the identity
+          Examples: "Become a reader" (read daily), "Become a pianist" (practice daily)
+        - COMPLEX (is_complex: true): Multi-faceted identity requiring various actions
+          Examples: "Become an entrepreneur" (needs product, marketing, sales, etc.)
+
+        Return ONLY valid JSON in this EXACT format:
+        {
+          "vision_refined": "Clear identity goal",
+          "identity_statement": "I am a [identity]",
+          "is_complex": true | false,
+          "evidence_categories": ["Practice", "Performance", "Learning"],
+          "milestones": [
+            {"title": "First public performance", "category": "Performance"},
+            {"title": "10 hours of practice", "category": "Practice"}
+          ],
+          "daily_task_description": "What to do daily to build this identity"
+        }
+
+        For SIMPLE identities, focus on the daily evidence collection.
+        For COMPLEX identities, suggest varied evidence categories.
+        """
+
+        let userPrompt = """
+        USER'S IDENTITY VISION: "\(visionText)"
+
+        USER CONTEXT:
+        - Experience Level: \(answers.experienceLevel.isEmpty ? "Beginner" : answers.experienceLevel)
+        - Passions: \(answers.passions.isEmpty ? "Not specified" : answers.passions)
+        - What this identity means to them: \(answers.identityMeaning.isEmpty ? "Not specified" : answers.identityMeaning)
+
+        Generate an identity plan with appropriate complexity level.
+        """
+
+        let responseText = try await makeRequest(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            temperature: 0.7,
+            maxTokens: 1000,
+            requireJSON: true
+        )
+
+        guard let data = responseText.data(using: .utf8) else {
+            throw GroqError.decodingError("Could not convert response to data")
+        }
+
+        do {
+            let decoder = JSONDecoder()
+            let plan = try decoder.decode(AIGeneratedIdentityPlan.self, from: data)
+            return plan
+        } catch {
+            print("Decoding error: \(error)")
+            print("Response: \(responseText)")
             throw GroqError.decodingError(error.localizedDescription)
         }
     }
@@ -461,6 +684,283 @@ class GroqService: ObservableObject {
             maxTokens: 100
         )
     }
+
+    // MARK: - Enhanced AI Companion Methods
+
+    /// Analyze user message intent to determine if it's a research request, help question, or brainstorming
+    func analyzeMessageIntent(
+        message: String,
+        taskContext: String
+    ) async throws -> MessageIntent {
+        let systemPrompt = """
+        Analyze the user's message and determine their intent.
+
+        Categories:
+        - researchRequest: User wants you to look up information, find data, or investigate something
+        - taskHelp: User needs advice, guidance, or explanation about how to do the task
+        - brainstorming: User wants to ideate, explore options, or think through approaches
+        - statusUpdate: User is sharing progress or asking "what's next"
+
+        Respond with ONLY the category name, nothing else.
+
+        Examples:
+        "can you research the best demographics for my app?" -> researchRequest
+        "how should I structure my pitch deck?" -> taskHelp
+        "what are some creative ways to market this?" -> brainstorming
+        "I finished the research, what's next?" -> statusUpdate
+        """
+
+        let userPrompt = """
+        Task Context: \(taskContext)
+
+        User Message: "\(message)"
+
+        Intent:
+        """
+
+        let response = try await makeRequest(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            temperature: 0.3,
+            maxTokens: 10
+        )
+
+        return MessageIntent(rawValue: response.trimmingCharacters(in: .whitespacesAndNewlines)) ?? .taskHelp
+    }
+
+    /// Generate 2-3 clarifying questions to help focus a research request
+    func generateResearchClarifications(
+        query: String,
+        taskContext: String,
+        taskTitle: String
+    ) async throws -> [String] {
+        let systemPrompt = """
+        Generate 2-3 clarifying questions to help focus a research request.
+
+        Questions should:
+        - Be specific and actionable
+        - Help narrow the scope
+        - Relate to the user's task context
+        - Avoid yes/no questions
+
+        Return ONLY valid JSON:
+        {
+          "questions": ["Question 1?", "Question 2?", "Question 3?"]
+        }
+        """
+
+        let userPrompt = """
+        Task: \(taskTitle)
+        Context: \(taskContext)
+
+        Research Request: "\(query)"
+
+        Generate 2-3 clarifying questions to make this research more effective.
+        """
+
+        let responseText = try await makeRequest(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            temperature: 0.7,
+            maxTokens: 300,
+            requireJSON: true
+        )
+
+        struct QuestionsResponse: Codable {
+            let questions: [String]
+        }
+
+        guard let data = responseText.data(using: .utf8) else {
+            throw GroqError.decodingError("Could not convert response to data")
+        }
+
+        do {
+            let response = try JSONDecoder().decode(QuestionsResponse.self, from: data)
+            return response.questions
+        } catch {
+            throw GroqError.decodingError(error.localizedDescription)
+        }
+    }
+
+    /// Synthesize web search results into a clear, actionable summary
+    func synthesizeResearchResults(
+        query: String,
+        clarifications: [QAPair],
+        rawSearchResults: String,
+        taskContext: String
+    ) async throws -> String {
+        let systemPrompt = """
+        You are synthesizing web search results into a clear, actionable summary for a user working on a specific task.
+
+        Output Format:
+        - Start with 1-2 sentence executive summary
+        - Key findings (3-5 bullet points)
+        - Specific recommendations relevant to their task
+        - Sources (mention where the information came from)
+
+        Tone: Helpful and concise. Focus on actionable insights.
+
+        CRITICAL: Only include information actually present in the search results. Do not hallucinate or add external knowledge. If results are insufficient, say so clearly.
+
+        Example:
+        "Based on your research on virtual try-on demographics:
+
+        The primary market is women aged 18-35 who shop online frequently. Key insights:
+        • 67% of online fashion shoppers want AR try-on features
+        • Gen Z consumers (18-24) are 2x more likely to use virtual try-on
+        • Main motivation is reducing returns (reported by 73% of users)
+
+        Recommendations for your app:
+        - Focus marketing on Instagram/TikTok where Gen Z fashion shoppers are active
+        - Emphasize 'try before you buy' and return reduction in messaging
+        - Consider starting with women's fashion accessories (highest adoption)
+
+        Sources: McKinsey Fashion Technology Report, Shopify AR Commerce Study, RetailDive Consumer Survey"
+        """
+
+        let clarificationsText = clarifications.map { "Q: \($0.question)\nA: \($0.answer)" }.joined(separator: "\n")
+
+        let userPrompt = """
+        Original Query: \(query)
+
+        Clarifying Q&A:
+        \(clarificationsText)
+
+        Task Context: \(taskContext)
+
+        Web Search Results:
+        \(rawSearchResults)
+
+        Synthesize these results into an actionable summary for the user.
+        """
+
+        return try await makeRequest(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            temperature: 0.7,
+            maxTokens: 800
+        )
+    }
+
+    /// Perform browser search using Groq's built-in browser_search tool
+    /// NOTE: Uses openai/gpt-oss-120b model (not llama) because browser_search tool
+    /// is only available on specific models. Other methods use llama-3.3-70b-versatile.
+    func performBrowserSearch(
+        query: String,
+        clarifications: [QAPair],
+        taskContext: String,
+        taskTitle: String
+    ) async throws -> String {
+        let systemPrompt = """
+        You are Momentum's AI companion performing research for a user working on a specific task.
+
+        Use the browser_search tool to find relevant information, then synthesize it into a clear, actionable summary.
+
+        Output Format:
+        - Start with 1-2 sentence executive summary
+        - Key findings (3-5 bullet points with specific data/facts)
+        - Specific recommendations relevant to their task
+        - Sources (include URLs where possible)
+
+        Tone: Helpful, competent, friendly. Focus on actionable insights.
+
+        CRITICAL: Only include information from your search results. Do not hallucinate. If results are insufficient, clearly state what information is missing.
+        """
+
+        let clarificationsText = clarifications.isEmpty
+            ? "No additional clarifications provided."
+            : clarifications.map { "Q: \($0.question)\nA: \($0.answer)" }.joined(separator: "\n")
+
+        let userPrompt = """
+        Research Request: \(query)
+
+        Clarifying Details:
+        \(clarificationsText)
+
+        Task Context: Working on "\(taskTitle)" - \(taskContext)
+
+        Please search for relevant information and provide a comprehensive summary with actionable insights.
+        """
+
+        // Use gpt-oss-120b model with browser_search tool
+        let request = GroqRequest(
+            model: "openai/gpt-oss-120b",
+            messages: [
+                GroqRequest.Message(role: "system", content: systemPrompt),
+                GroqRequest.Message(role: "user", content: userPrompt)
+            ],
+            temperature: 0.7,
+            maxTokens: 1200,
+            responseFormat: nil,
+            tools: [GroqRequest.Tool(type: "browser_search")]
+        )
+
+        guard let url = URL(string: baseURL) else {
+            throw GroqError.invalidURL
+        }
+
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        urlRequest.addValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let encoder = JSONEncoder()
+        urlRequest.httpBody = try encoder.encode(request)
+
+        let (data, response) = try await URLSession.shared.data(for: urlRequest)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw GroqError.invalidResponse
+        }
+
+        if httpResponse.statusCode != 200 {
+            if let errorMessage = String(data: data, encoding: .utf8) {
+                throw GroqError.apiError("HTTP \(httpResponse.statusCode): \(errorMessage)")
+            } else {
+                throw GroqError.apiError("HTTP \(httpResponse.statusCode)")
+            }
+        }
+
+        let decoder = JSONDecoder()
+        let groqResponse = try decoder.decode(GroqResponse.self, from: data)
+
+        guard let firstChoice = groqResponse.choices.first else {
+            throw GroqError.invalidResponse
+        }
+
+        return firstChoice.message.content
+    }
+
+    // MARK: - Companion System Prompt
+
+    /// System prompt for companion tone (helpful assistant, not motivational coach)
+    private func companionSystemPrompt() -> String {
+        """
+        You are Momentum's AI companion - a maximally helpful research and planning assistant.
+
+        Your role is to DO THINGS for the user, not just advise them:
+        - When asked to research something, you ASK CLARIFYING QUESTIONS then PERFORM ACTUAL RESEARCH
+        - When asked for help, you provide SPECIFIC, ACTIONABLE guidance
+        - You are their partner in achieving goals, not a motivational poster
+
+        Tone: Helpful, competent, friendly. Think "capable assistant" not "cheerleader coach"
+
+        Key behaviors:
+        - Ask 2-3 specific questions to understand user's exact need
+        - Do the research/thinking work for them
+        - Present findings clearly with sources
+        - Offer next steps
+        """
+    }
+}
+
+// MARK: - Message Intent Types
+
+enum MessageIntent: String {
+    case researchRequest
+    case taskHelp
+    case brainstorming
+    case statusUpdate
 }
 
 // MARK: - Message Event Types

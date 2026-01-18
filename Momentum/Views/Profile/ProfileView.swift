@@ -6,25 +6,23 @@
 //
 
 import SwiftUI
+import PhosphorSwift
 
 struct ProfileView: View {
     @EnvironmentObject var appState: AppState
+    @Environment(\.dismiss) private var dismiss
     @State private var showPremiumUpgrade = false
     @State private var showAIPersonality = false
     @State private var showGenerateNewPlan = false
 
     var body: some View {
-        ZStack {
-            Color.momentumDarkBackground
-                .ignoresSafeArea()
+        NavigationStack {
+            ZStack {
+                Color.momentumDarkBackground
+                    .ignoresSafeArea()
 
-            ScrollView {
-                VStack(spacing: 24) {
-                    // Header
-                    Text("Profile")
-                        .font(MomentumFont.heading(20))
-                        .foregroundColor(.white)
-                        .padding(.top)
+                ScrollView {
+                    VStack(spacing: 24) {
 
                     // Profile Card
                     profileCard
@@ -54,6 +52,23 @@ struct ProfileView: View {
                 }
             }
         }
+        .navigationTitle("Profile")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Ph.caretLeft.regular
+                                .frame(width: 16, height: 16)
+                            Text("Back")
+                        }
+                        .foregroundColor(.momentumViolet)
+                    }
+                }
+            }
+        }
         .sheet(isPresented: $showPremiumUpgrade) {
             PremiumUpgradeSheet()
         }
@@ -68,9 +83,9 @@ struct ProfileView: View {
     // MARK: - Profile Card
     private var profileCard: some View {
         VStack(spacing: 16) {
-            Image(systemName: "person.circle.fill")
-                .font(.system(size: 72))
-                .foregroundColor(.momentumSecondaryText)
+            Ph.userCircle.fill
+                .color(.momentumSecondaryText)
+                .frame(width: 72, height: 72)
 
             VStack(spacing: 4) {
                 Text("Henry Smith")
@@ -99,8 +114,9 @@ struct ProfileView: View {
     private var premiumFeaturesCard: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Image(systemName: "star.fill")
-                    .foregroundColor(.momentumGold)
+                Ph.star.fill
+                    .color(.momentumGold)
+                    .frame(width: 20, height: 20)
                 Text("Premium Features")
                     .font(MomentumFont.bodyMedium(16))
                     .foregroundColor(.white)
@@ -110,8 +126,9 @@ struct ProfileView: View {
             if appState.currentUser?.subscriptionTier == .free {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        Image(systemName: "lock.fill")
-                            .foregroundColor(.momentumSecondaryText)
+                        Ph.lock.fill
+                            .color(.momentumSecondaryText)
+                            .frame(width: 16, height: 16)
                         Text("You're on the Free plan")
                             .font(MomentumFont.body(15))
                             .foregroundColor(.momentumSecondaryText)
@@ -143,14 +160,16 @@ struct ProfileView: View {
                 } label: {
                     HStack {
                         Text("Upgrade to Premium")
-                        Image(systemName: "arrow.right")
+                        Ph.arrowRight.regular
+                            .frame(width: 16, height: 16)
                     }
                 }
                 .buttonStyle(PrimaryButtonStyle())
             } else {
                 HStack {
-                    Image(systemName: "checkmark.seal.fill")
-                        .foregroundColor(.momentumGreenStart)
+                    Ph.sealCheck.fill
+                        .color(.momentumGreenStart)
+                        .frame(width: 20, height: 20)
                     Text("Premium Active")
                         .font(MomentumFont.bodyMedium(16))
                         .foregroundColor(.momentumGreenStart)
@@ -169,9 +188,9 @@ struct ProfileView: View {
 
     private func premiumFeatureRow(text: String) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: "checkmark")
-                .font(.system(size: 12, weight: .bold))
-                .foregroundColor(.momentumViolet)
+            Ph.check.regular
+                .color(.momentumViolet)
+                .frame(width: 12, height: 12)
             Text(text)
                 .font(MomentumFont.body(14))
                 .foregroundColor(.white)
@@ -221,9 +240,9 @@ struct ProfileView: View {
     private func settingsRow(icon: String, title: String, isPremium: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack {
-                Image(systemName: icon)
-                    .foregroundColor(.momentumSecondaryText)
-                    .frame(width: 24)
+                iconForSettings(icon)
+                    .color(.momentumSecondaryText)
+                    .frame(width: 24, height: 24)
 
                 Text(title)
                     .font(MomentumFont.body(15))
@@ -241,11 +260,27 @@ struct ProfileView: View {
                         .clipShape(Capsule())
                 }
 
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14))
-                    .foregroundColor(.momentumSecondaryText)
+                Ph.caretRight.regular
+                    .color(.momentumSecondaryText)
+                    .frame(width: 14, height: 14)
             }
             .padding()
+        }
+    }
+
+    @ViewBuilder
+    private func iconForSettings(_ icon: String) -> Image {
+        switch icon {
+        case "brain.head.profile":
+            return Ph.brain.regular
+        case "bell.fill":
+            return Ph.bell.fill
+        case "moon.fill":
+            return Ph.moon.fill
+        case "calendar":
+            return Ph.calendar.regular
+        default:
+            return Ph.gear.regular
         }
     }
 
@@ -278,17 +313,17 @@ struct ProfileView: View {
         Button(action: action) {
             HStack {
                 if let icon = icon {
-                    Image(systemName: icon)
-                        .foregroundColor(.momentumViolet)
-                        .frame(width: 24)
+                    Ph.sparkle.regular
+                        .color(.momentumViolet)
+                        .frame(width: 24, height: 24)
                 }
                 Text(title)
                     .font(MomentumFont.body(15))
                     .foregroundColor(.white)
                 Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14))
-                    .foregroundColor(.momentumSecondaryText)
+                Ph.caretRight.regular
+                    .color(.momentumSecondaryText)
+                    .frame(width: 14, height: 14)
             }
             .padding()
         }
@@ -324,9 +359,9 @@ struct ProfileView: View {
                     .font(MomentumFont.body(15))
                     .foregroundColor(.white)
                 Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14))
-                    .foregroundColor(.momentumSecondaryText)
+                Ph.caretRight.regular
+                    .color(.momentumSecondaryText)
+                    .frame(width: 14, height: 14)
             }
             .padding()
         }
@@ -354,9 +389,9 @@ struct PremiumUpgradeSheet: View {
                     Button {
                         dismiss()
                     } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 28))
-                            .foregroundColor(.momentumSecondaryText)
+                        Ph.xCircle.fill
+                            .color(.momentumSecondaryText)
+                            .frame(width: 28, height: 28)
                     }
                 }
                 .padding(.horizontal)
@@ -408,7 +443,8 @@ struct PremiumUpgradeSheet: View {
                     } label: {
                         HStack {
                             Text("Start Free Trial")
-                            Image(systemName: "arrow.right")
+                            Ph.arrowRight.regular
+                                .frame(width: 16, height: 16)
                         }
                     }
                     .buttonStyle(PrimaryButtonStyle())
@@ -429,8 +465,9 @@ struct PremiumUpgradeSheet: View {
 
     private func featureRow(text: String) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundColor(.momentumGreenStart)
+            Ph.checkCircle.fill
+                .color(.momentumGreenStart)
+                .frame(width: 20, height: 20)
             Text(text)
                 .font(MomentumFont.body(16))
                 .foregroundColor(.white)
@@ -442,8 +479,9 @@ struct PremiumUpgradeSheet: View {
             selectedPlan = plan
         } label: {
             HStack {
-                Image(systemName: selectedPlan == plan ? "largecircle.fill.circle" : "circle")
-                    .foregroundColor(selectedPlan == plan ? .momentumViolet : .momentumSecondaryText)
+                (selectedPlan == plan ? Ph.radioButton.fill : Ph.circle.regular)
+                    .color(selectedPlan == plan ? .momentumViolet : .momentumSecondaryText)
+                    .frame(width: 20, height: 20)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(price)
@@ -500,7 +538,8 @@ struct AIPersonalitySheet: View {
                         dismiss()
                     } label: {
                         HStack {
-                            Image(systemName: "chevron.left")
+                            Ph.caretLeft.regular
+                                .frame(width: 16, height: 16)
                             Text("Back")
                         }
                         .foregroundColor(.momentumSecondaryText)
@@ -563,8 +602,9 @@ struct AIPersonalitySheet: View {
             selectedPersonality = personality
         } label: {
             HStack {
-                Image(systemName: selectedPersonality == personality ? "largecircle.fill.circle" : "circle")
-                    .foregroundColor(selectedPersonality == personality ? .momentumViolet : .momentumSecondaryText)
+                (selectedPersonality == personality ? Ph.radioButton.fill : Ph.circle.regular)
+                    .color(selectedPersonality == personality ? .momentumViolet : .momentumSecondaryText)
+                    .frame(width: 20, height: 20)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(personality.displayName)
@@ -598,14 +638,16 @@ struct QuickPlanGeneratorSheet: View {
     @EnvironmentObject var appState: AppState
     @StateObject private var groqService = GroqService.shared
 
+    @State private var selectedGoalType: GoalType = .project
     @State private var visionText: String = ""
     @State private var generatedQuestions: [OnboardingQuestion] = []
     @State private var answers = OnboardingAnswers()
     @State private var isLoadingQuestions = false
     @State private var isGeneratingPlan = false
-    @State private var currentStep: Step = .vision
+    @State private var currentStep: Step = .goalTypeSelection
 
     enum Step {
+        case goalTypeSelection
         case vision
         case loadingQuestions
         case questions
@@ -619,6 +661,8 @@ struct QuickPlanGeneratorSheet: View {
                     .ignoresSafeArea()
 
                 switch currentStep {
+                case .goalTypeSelection:
+                    goalTypeSelectionView
                 case .vision:
                     visionInputView
                 case .loadingQuestions:
@@ -642,8 +686,9 @@ struct QuickPlanGeneratorSheet: View {
 
                 ToolbarItem(placement: .principal) {
                     HStack(spacing: 8) {
-                        Image(systemName: "sparkles")
-                            .foregroundColor(.momentumViolet)
+                        Ph.sparkle.regular
+                            .color(.momentumViolet)
+                            .frame(width: 16, height: 16)
                         Text("Generate Plan")
                             .font(MomentumFont.heading(17))
                             .foregroundColor(.white)
@@ -653,9 +698,143 @@ struct QuickPlanGeneratorSheet: View {
         }
     }
 
+    // MARK: - Goal Type Selection
+    private var goalTypeSelectionView: some View {
+        VStack(spacing: 24) {
+            Spacer()
+
+            VStack(spacing: 12) {
+                Text("What type of goal?")
+                    .font(MomentumFont.heading(24))
+                    .foregroundColor(.white)
+
+                Text("Choose the approach that fits your vision")
+                    .font(MomentumFont.body(16))
+                    .foregroundColor(.momentumSecondaryText)
+            }
+            .padding(.horizontal)
+
+            VStack(spacing: 12) {
+                goalTypeButton(
+                    type: .project,
+                    icon: "target",
+                    title: "Project Goal",
+                    description: "12-month structured plan with milestones"
+                )
+
+                goalTypeButton(
+                    type: .habit,
+                    icon: "repeat",
+                    title: "Daily Habit",
+                    description: "Build consistency with streak tracking"
+                )
+
+                goalTypeButton(
+                    type: .identity,
+                    icon: "person.fill.badge.plus",
+                    title: "Identity Goal",
+                    description: "Become someone through evidence"
+                )
+            }
+            .padding(.horizontal)
+
+            Spacer()
+
+            Button {
+                currentStep = .vision
+            } label: {
+                HStack {
+                    Text("Continue")
+                    Ph.arrowRight.regular
+                        .frame(width: 16, height: 16)
+                }
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .padding(.horizontal)
+            .padding(.bottom, 32)
+        }
+    }
+
+    private func goalTypeButton(type: GoalType, icon: String, title: String, description: String) -> some View {
+        Button {
+            selectedGoalType = type
+        } label: {
+            HStack(spacing: 16) {
+                ZStack {
+                    if selectedGoalType == type {
+                        Circle()
+                            .fill(MomentumGradients.primary)
+                            .frame(width: 48, height: 48)
+                    } else {
+                        Circle()
+                            .fill(Color.white.opacity(0.1))
+                            .frame(width: 48, height: 48)
+                    }
+
+                    iconForGoalType(icon)
+                        .color(.white)
+                        .frame(width: 20, height: 20)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(MomentumFont.bodyMedium(16))
+                        .foregroundColor(.white)
+
+                    Text(description)
+                        .font(MomentumFont.body(13))
+                        .foregroundColor(.momentumSecondaryText)
+                }
+
+                Spacer()
+
+                (selectedGoalType == type ? Ph.checkCircle.fill : Ph.circle.regular)
+                    .color(selectedGoalType == type ? .momentumViolet : .momentumSecondaryText)
+                    .frame(width: 20, height: 20)
+            }
+            .padding()
+            .background(selectedGoalType == type ? Color.momentumViolet.opacity(0.15) : Color.white.opacity(0.05))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(selectedGoalType == type ? Color.momentumViolet : Color.clear, lineWidth: 1.5)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func iconForGoalType(_ icon: String) -> Image {
+        switch icon {
+        case "target":
+            return Ph.target.regular
+        case "repeat":
+            return Ph.repeat.regular
+        case "person.fill.badge.plus":
+            return Ph.userPlus.fill
+        default:
+            return Ph.target.regular
+        }
+    }
+
     // MARK: - Vision Input
     private var visionInputView: some View {
         VStack(spacing: 24) {
+            HStack {
+                Button {
+                    currentStep = .goalTypeSelection
+                } label: {
+                    HStack(spacing: 4) {
+                        Ph.caretLeft.regular
+                            .frame(width: 16, height: 16)
+                        Text("Back")
+                    }
+                    .foregroundColor(.momentumSecondaryText)
+                }
+                Spacer()
+            }
+            .padding(.horizontal)
+
             Spacer()
 
             VStack(spacing: 16) {
@@ -684,7 +863,8 @@ struct QuickPlanGeneratorSheet: View {
             } label: {
                 HStack {
                     Text("Continue")
-                    Image(systemName: "arrow.right")
+                    Ph.arrowRight.regular
+                        .frame(width: 16, height: 16)
                 }
             }
             .buttonStyle(PrimaryButtonStyle())
@@ -786,15 +966,15 @@ struct QuickPlanGeneratorSheet: View {
             do {
                 let plan = try await groqService.generateGoalPlan(
                     visionText: visionText,
+                    goalType: selectedGoalType,
                     answers: answers
                 )
 
                 await MainActor.run {
                     // Convert plan to Goal and save
                     let goal = convertPlanToGoal(plan)
-                    appState.activeGoal = goal
-                    appState.saveGoal(goal)
-                    appState.loadTodaysTasks()
+                    appState.addGoal(goal)
+                    appState.loadTodaysContent()
 
                     dismiss()
                 }
@@ -827,10 +1007,22 @@ struct QuickPlanGeneratorSheet: View {
         ]
     }
 
-    private func convertPlanToGoal(_ plan: AIGeneratedPlan) -> Goal {
+    private func convertPlanToGoal(_ response: AIGoalPlanResponse) -> Goal {
         let goalId = UUID()
         let userId = appState.currentUser?.id ?? UUID()
 
+        switch response {
+        case .project(let plan):
+            return convertProjectPlan(plan, goalId: goalId, userId: userId)
+        case .habit(let plan):
+            return convertHabitPlan(plan, goalId: goalId, userId: userId)
+        case .identity(let plan):
+            return convertIdentityPlan(plan, goalId: goalId, userId: userId)
+        }
+    }
+
+    // MARK: - Project Conversion
+    private func convertProjectPlan(_ plan: AIGeneratedPlan, goalId: UUID, userId: UUID) -> Goal {
         var powerGoals: [PowerGoal] = []
 
         for (index, pgData) in plan.powerGoals.enumerated() {
@@ -854,7 +1046,7 @@ struct QuickPlanGeneratorSheet: View {
                                 weeklyMilestoneId: milestoneId,
                                 goalId: goalId,
                                 title: taskData.title,
-                                description: taskData.description,
+                                taskDescription: taskData.description,
                                 difficulty: TaskDifficulty(rawValue: taskData.difficulty) ?? .medium,
                                 estimatedMinutes: taskData.estimatedMinutes,
                                 isAnchorTask: taskData.title.lowercased().contains(plan.anchorTask.lowercased().prefix(10)),
@@ -893,6 +1085,7 @@ struct QuickPlanGeneratorSheet: View {
             userId: userId,
             visionText: visionText,
             visionRefined: plan.visionRefined,
+            goalType: .project,
             isIdentityBased: false,
             status: .active,
             createdAt: Date(),
@@ -900,6 +1093,83 @@ struct QuickPlanGeneratorSheet: View {
             currentPowerGoalIndex: 0,
             completionPercentage: 0,
             powerGoals: powerGoals
+        )
+    }
+
+    // MARK: - Habit Conversion
+    private func convertHabitPlan(_ plan: AIGeneratedHabitPlan, goalId: UUID, userId: UUID) -> Goal {
+        let frequency: HabitFrequency = {
+            switch plan.frequency.lowercased() {
+            case "daily": return .daily
+            case "weekdays": return .weekdays
+            case "weekends": return .weekends
+            default: return .daily
+            }
+        }()
+
+        let habitConfig = HabitConfig(
+            frequency: frequency,
+            customDays: nil,
+            currentStreak: 0,
+            longestStreak: 0,
+            lastCompletedDate: nil,
+            skipHistory: [],
+            reminderTime: nil,
+            weeklyGoal: plan.weeklyGoal
+        )
+
+        return Goal(
+            id: goalId,
+            userId: userId,
+            visionText: visionText,
+            visionRefined: plan.visionRefined,
+            goalType: .habit,
+            isIdentityBased: false,
+            status: .active,
+            createdAt: Date(),
+            targetCompletionDate: nil,
+            currentPowerGoalIndex: 0,
+            completionPercentage: 0,
+            powerGoals: [],
+            habitConfig: habitConfig,
+            identityConfig: nil
+        )
+    }
+
+    // MARK: - Identity Conversion
+    private func convertIdentityPlan(_ plan: AIGeneratedIdentityPlan, goalId: UUID, userId: UUID) -> Goal {
+        let identityMilestones = plan.milestones.map { milestone in
+            IdentityMilestone(
+                title: milestone.title,
+                isCompleted: false,
+                completedDate: nil,
+                evidenceId: nil
+            )
+        }
+
+        let identityConfig = IdentityConfig(
+            identityStatement: plan.identityStatement,
+            evidenceEntries: [],
+            milestones: identityMilestones
+        )
+
+        // If it's a complex identity, return as identity goal
+        // If it's simple, we could treat it like a habit, but still categorize as identity
+        return Goal(
+            id: goalId,
+            userId: userId,
+            visionText: visionText,
+            visionRefined: plan.visionRefined,
+            goalType: .identity,
+            isIdentityBased: true,
+            status: .active,
+            createdAt: Date(),
+            targetCompletionDate: nil,
+            currentPowerGoalIndex: 0,
+            completionPercentage: 0,
+            powerGoals: [],
+            habitConfig: nil,
+            identityConfig: identityConfig
         )
     }
 }

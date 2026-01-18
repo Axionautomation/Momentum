@@ -6,11 +6,12 @@
 //
 
 import SwiftUI
+import PhosphorSwift
 
 struct TodayView: View {
     @EnvironmentObject var appState: AppState
     @State private var selectedTask: MomentumTask?
-    @State private var showTaskDetail: Bool = false
+    @State private var showProfile = false
 
     private var dateFormatter: DateFormatter {
         let formatter = DateFormatter()
@@ -32,27 +33,73 @@ struct TodayView: View {
                     // Vision Card
                     visionCard
 
-                    // Today's Momentum Section
-                    VStack(alignment: .leading, spacing: 16) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Today's Momentum")
-                                .font(MomentumFont.heading(24))
-                                .foregroundColor(.white)
+                    // Today's Date Header
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Today's Momentum")
+                            .font(MomentumFont.heading(24))
+                            .foregroundColor(.white)
 
-                            Text(dateFormatter.string(from: Date()))
-                                .font(MomentumFont.body(16))
-                                .foregroundColor(.momentumSecondaryText)
-                        }
-                        .padding(.horizontal)
+                        Text(dateFormatter.string(from: Date()))
+                            .font(MomentumFont.body(16))
+                            .foregroundColor(.momentumSecondaryText)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
 
-                        // Task Cards
-                        VStack(spacing: 12) {
-                            ForEach(appState.todaysTasks) { task in
-                                TaskCardView(task: task) {
-                                    selectedTask = task
-                                    showTaskDetail = true
+                    // PROJECT TASKS SECTION
+                    if !appState.todaysTasks.isEmpty {
+                        VStack(alignment: .leading, spacing: 16) {
+                            sectionHeader(
+                                title: "Project Tasks",
+                                subtitle: appState.activeProjectGoal?.visionRefined,
+                                icon: "target"
+                            )
+
+                            VStack(spacing: 12) {
+                                ForEach(appState.todaysTasks) { task in
+                                    TaskCardView(task: task) {
+                                        selectedTask = task
+                                    }
                                 }
                             }
+                        }
+                        .padding(.horizontal)
+                    }
+
+                    // HABIT CHECK-INS SECTION
+                    if !appState.todaysHabits.isEmpty {
+                        VStack(alignment: .leading, spacing: 16) {
+                            sectionHeader(
+                                title: "Daily Habits",
+                                subtitle: "\(appState.todaysHabits.filter(\.isCompleted).count)/\(appState.todaysHabits.count) complete",
+                                icon: "repeat"
+                            )
+
+                            VStack(spacing: 8) {
+                                ForEach(appState.todaysHabits) { habit in
+                                    HabitCheckInRow(checkIn: habit)
+                                }
+                            }
+                        }
+                        .padding(.horizontal)
+                    }
+
+                    // IDENTITY TASK SECTION
+                    if let identityTask = appState.todaysIdentityTask {
+                        VStack(alignment: .leading, spacing: 16) {
+                            sectionHeader(
+                                title: "Identity Building",
+                                subtitle: appState.activeIdentityGoal?.identityConfig?.identityStatement,
+                                icon: "person.fill.badge.plus"
+                            )
+
+                            TaskCardView(task: identityTask) {
+                                selectedTask = identityTask
+                            }
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .strokeBorder(Color.momentumGold, lineWidth: 1.5)
+                            )
                         }
                         .padding(.horizontal)
                     }
@@ -62,16 +109,17 @@ struct TodayView: View {
 
                     // View Journey Button
                     Button {
-                        appState.selectedTab = .road
+                        appState.selectedTab = .journey
                     } label: {
                         HStack {
                             Text("View Your Journey")
-                            Image(systemName: "arrow.right")
+                            Ph.arrowRight.regular
+                                .frame(width: 16, height: 16)
                         }
                     }
                     .buttonStyle(SecondaryButtonStyle())
                     .padding(.horizontal)
-                    .padding(.bottom, 20)
+                    .padding(.bottom, 100)
                 }
                 .padding(.top)
             }
@@ -93,33 +141,24 @@ struct TodayView: View {
                 }
             }
         }
-        .sheet(isPresented: $showTaskDetail) {
-            if let task = selectedTask {
-                TaskDetailSheet(task: task) {
-                    appState.completeTask(task)
-                    showTaskDetail = false
-                }
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
+        .sheet(item: $selectedTask) { task in
+            TaskDetailSheet(task: task) {
+                appState.completeTask(task)
+                selectedTask = nil
             }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
+        .fullScreenCover(isPresented: $showProfile) {
+            ProfileView()
         }
     }
 
     // MARK: - Header View
     private var headerView: some View {
         HStack {
-            Button {
-                appState.selectedTab = .me
-            } label: {
-                Image(systemName: "person.circle.fill")
-                    .font(.system(size: 32))
-                    .foregroundColor(.momentumSecondaryText)
-            }
-
-            Spacer()
-
             HStack(spacing: 4) {
-                Text("")
+                Text("🔥")
                     .font(.system(size: 20))
                 Text("\(appState.currentUser?.streakCount ?? 0)")
                     .font(MomentumFont.stats(18))
@@ -129,6 +168,16 @@ struct TodayView: View {
             .padding(.vertical, 8)
             .background(Color.white.opacity(0.1))
             .clipShape(Capsule())
+
+            Spacer()
+
+            Button {
+                showProfile = true
+            } label: {
+                Ph.userCircle.fill
+                    .frame(width: 32, height: 32)
+                    .color(.momentumSecondaryText)
+            }
         }
         .padding(.horizontal)
     }
@@ -136,14 +185,14 @@ struct TodayView: View {
     // MARK: - Vision Card
     private var visionCard: some View {
         VStack {
-            Text(appState.activeGoal?.visionRefined ?? appState.activeGoal?.visionText ?? "Set your vision")
+            Text(appState.activeProjectGoal?.visionRefined ?? appState.activeProjectGoal?.visionText ?? "Set your vision")
                 .font(MomentumFont.bodyMedium(18))
                 .foregroundColor(.white)
                 .multilineTextAlignment(.center)
                 .padding()
         }
         .frame(maxWidth: .infinity)
-        .background(.ultraThinMaterial)
+        .background(Color.momentumSurfaceSecondary)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .overlay(
             RoundedRectangle(cornerRadius: 16)
@@ -157,6 +206,43 @@ struct TodayView: View {
                 )
         )
         .padding(.horizontal)
+    }
+
+    // MARK: - Section Header
+    private func sectionHeader(title: String, subtitle: String?, icon: String) -> some View {
+        HStack(spacing: 8) {
+            iconForName(icon)
+                .color(.momentumViolet)
+                .frame(width: 20, height: 20)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(MomentumFont.heading(20))
+                    .foregroundColor(.white)
+
+                if let subtitle = subtitle {
+                    Text(subtitle)
+                        .font(MomentumFont.body(14))
+                        .foregroundColor(.momentumSecondaryText)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer()
+        }
+    }
+
+    private func iconForName(_ name: String) -> Image {
+        switch name {
+        case "target":
+            return Ph.target.regular
+        case "repeat":
+            return Ph.repeat.regular
+        case "person.fill.badge.plus":
+            return Ph.userPlus.fill
+        default:
+            return Ph.circle.regular
+        }
     }
 
     // MARK: - Weekly Progress
@@ -208,9 +294,9 @@ struct TaskCardView: View {
                             .fill(MomentumGradients.success)
                             .frame(width: 28, height: 28)
 
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.white)
+                        Ph.check.regular
+                            .frame(width: 14, height: 14)
+                            .color(.white)
                     }
                 }
 
@@ -229,12 +315,13 @@ struct TaskCardView: View {
                     } else {
                         HStack(spacing: 12) {
                             HStack(spacing: 4) {
-                                Image(systemName: "clock")
-                                    .font(.system(size: 12))
+                                Ph.clock.regular
+                                    .frame(width: 12, height: 12)
+                                    .color(.momentumSecondaryText)
                                 Text("\(task.estimatedMinutes) min")
                                     .font(MomentumFont.body(13))
+                                    .foregroundColor(.momentumSecondaryText)
                             }
-                            .foregroundColor(.momentumSecondaryText)
 
                             HStack(spacing: 4) {
                                 Text(task.difficulty.emoji)
@@ -250,9 +337,9 @@ struct TaskCardView: View {
                 Spacer()
 
                 if task.status != .completed {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.momentumSecondaryText)
+                    Ph.caretRight.regular
+                        .frame(width: 14, height: 14)
+                        .color(.momentumSecondaryText)
                 }
             }
             .padding()
@@ -293,7 +380,7 @@ struct TaskDetailSheet: View {
                         .foregroundColor(.white)
                         .multilineTextAlignment(.center)
 
-                    if let description = task.description {
+                    if let description = task.taskDescription {
                         Text(description)
                             .font(MomentumFont.body(16))
                             .foregroundColor(.momentumSecondaryText)
@@ -305,10 +392,12 @@ struct TaskDetailSheet: View {
                 // Metadata
                 HStack(spacing: 24) {
                     HStack(spacing: 6) {
-                        Image(systemName: "clock")
+                        Ph.clock.regular
+                            .frame(width: 15, height: 15)
+                            .color(.momentumSecondaryText)
                         Text("\(task.estimatedMinutes) min")
+                            .foregroundColor(.momentumSecondaryText)
                     }
-                    .foregroundColor(.momentumSecondaryText)
 
                     HStack(spacing: 6) {
                         Text(task.difficulty.emoji)
@@ -332,8 +421,8 @@ struct TaskDetailSheet: View {
                                 generateMicrosteps()
                             } label: {
                                 HStack(spacing: 4) {
-                                    Image(systemName: "sparkles")
-                                        .font(.system(size: 12))
+                                    Ph.sparkle.regular
+                                        .frame(width: 12, height: 12)
                                     Text("Generate")
                                         .font(MomentumFont.body(13))
                                 }
@@ -389,7 +478,8 @@ struct TaskDetailSheet: View {
                     showAIAssistant = true
                 } label: {
                     HStack {
-                        Image(systemName: "sparkles")
+                        Ph.sparkle.regular
+                            .frame(width: 15, height: 15)
                         Text("Ask AI Assistant for Help")
                     }
                     .font(MomentumFont.bodyMedium(15))
@@ -406,7 +496,8 @@ struct TaskDetailSheet: View {
                         onComplete()
                     } label: {
                         HStack {
-                            Image(systemName: "checkmark")
+                            Ph.check.regular
+                                .frame(width: 16, height: 16)
                             Text("Mark Complete")
                         }
                     }
@@ -434,7 +525,7 @@ struct TaskDetailSheet: View {
             do {
                 let steps = try await groqService.generateMicrosteps(
                     taskTitle: task.title,
-                    taskDescription: task.description,
+                    taskDescription: task.taskDescription,
                     difficulty: task.difficulty
                 )
 
@@ -466,7 +557,7 @@ struct CompletionToast: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
-        .background(.ultraThinMaterial)
+        .background(Color.momentumSurfaceSecondary)
         .clipShape(Capsule())
         .shadow(color: .black.opacity(0.2), radius: 10, y: 5)
         .padding(.top, 60)
@@ -508,7 +599,8 @@ struct AllTasksCompleteCelebrationView: View {
                     } label: {
                         HStack {
                             Text("Keep Going")
-                            Image(systemName: "arrow.right")
+                            Ph.arrowRight.regular
+                                .frame(width: 16, height: 16)
                         }
                     }
                     .buttonStyle(PrimaryButtonStyle())
@@ -519,6 +611,67 @@ struct AllTasksCompleteCelebrationView: View {
             .clipShape(RoundedRectangle(cornerRadius: 24))
             .padding(.horizontal, 24)
         }
+    }
+}
+
+// MARK: - Habit Check-In Row
+struct HabitCheckInRow: View {
+    let checkIn: HabitCheckIn
+    @EnvironmentObject var appState: AppState
+
+    var habitGoal: Goal? {
+        appState.activeHabitGoals.first(where: { $0.id == checkIn.habitGoalId })
+    }
+
+    var body: some View {
+        Button {
+            appState.completeHabitCheckIn(checkIn)
+        } label: {
+            HStack(spacing: 16) {
+                // Checkbox
+                ZStack {
+                    RoundedRectangle(cornerRadius: 6)
+                        .strokeBorder(
+                            checkIn.isCompleted ? Color.momentumGreenStart : Color.momentumSecondaryText,
+                            lineWidth: 2
+                        )
+                        .frame(width: 28, height: 28)
+
+                    if checkIn.isCompleted {
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(MomentumGradients.success)
+                            .frame(width: 28, height: 28)
+
+                        Ph.check.regular
+                            .frame(width: 14, height: 14)
+                            .color(.white)
+                    }
+                }
+
+                // Habit info
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(habitGoal?.visionText ?? "Habit")
+                        .font(MomentumFont.bodyMedium(16))
+                        .foregroundColor(checkIn.isCompleted ? .momentumSecondaryText : .white)
+                        .strikethrough(checkIn.isCompleted)
+
+                    if let config = habitGoal?.habitConfig {
+                        HStack(spacing: 4) {
+                            Text("🔥")
+                            Text("\(config.currentStreak) day streak")
+                                .font(MomentumFont.body(13))
+                                .foregroundColor(.momentumGreenStart)
+                        }
+                    }
+                }
+
+                Spacer()
+            }
+            .padding()
+            .background(Color.white.opacity(checkIn.isCompleted ? 0.03 : 0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
     }
 }
 
