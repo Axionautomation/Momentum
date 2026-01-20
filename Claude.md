@@ -243,3 +243,34 @@ Edit `Config.swift` for:
 - `groqAPIBaseURL` - API endpoint
 - `groqModel` - Model selection
 - `appVersion` - Version string
+
+## Workflow Requirements
+
+### Always Ask Clarifying Questions
+
+Before making significant changes, **always ask clarifying questions** when:
+- Requirements are ambiguous or incomplete
+- Multiple implementation approaches are possible
+- Changes could affect existing functionality
+- You're unsure about the user's intent or preferences
+- The task involves architectural decisions
+
+Do not assume - it's better to ask and get it right than to make incorrect changes.
+
+### Always Push to GitHub
+
+After completing any code changes:
+
+1. **Stage and commit** your changes with a descriptive commit message
+2. **Push to the remote repository** at the end of your work session
+3. **Verify the push was successful** before confirming completion
+
+```bash
+git add .
+git commit -m "Description of changes"
+git push origin main
+```
+
+**Important:**
+- Never commit `Config.swift` (contains API keys, already in .gitignore)
+- Repository: https://github.com/Axionautomation/Momentum.git
