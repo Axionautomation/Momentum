@@ -1,0 +1,20 @@
+//
+//  Config.swift
+//  Momentum
+//
+//  Created by Henry Bowman on 12/29/25.
+//
+
+import Foundation
+
+struct Config {
+    // MARK: - Groq API Configuration
+    static let groqAPIKey = "YOUR_GROQ_API_KEY_HERE"  // Get your key at https://console.groq.com
+    static let groqAPIBaseURL = "https://api.groq.com/openai/v1"
+    static let groqModel = "llama-3.3-70b-versatile" // Fast model for general AI tasks (intent, clarifications, help)
+    // NOTE: Browser search uses openai/gpt-oss-120b (only model with browser_search tool)
+
+    // MARK: - App Configuration
+    static let appVersion = "1.0.0"
+    static let minimumIOSVersion = "16.0"
+}

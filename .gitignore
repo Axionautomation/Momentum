@@ -90,4 +90,8 @@ fastlane/test_output
 iOSInjectionProject/
 
 # Config file with API keys
-Config.swift
+Momentum/Config.swift
+
+# macOS
+.DS_Store
+._*
