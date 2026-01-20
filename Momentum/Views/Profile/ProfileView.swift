@@ -268,7 +268,6 @@ struct ProfileView: View {
         }
     }
 
-    @ViewBuilder
     private func iconForSettings(_ icon: String) -> Image {
         switch icon {
         case "brain.head.profile":
@@ -312,7 +311,7 @@ struct ProfileView: View {
     private func manageGoalRow(title: String, icon: String? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack {
-                if let icon = icon {
+                if icon != nil {
                     Ph.sparkle.regular
                         .color(.momentumViolet)
                         .frame(width: 24, height: 24)
@@ -803,7 +802,6 @@ struct QuickPlanGeneratorSheet: View {
         .buttonStyle(.plain)
     }
 
-    @ViewBuilder
     private func iconForGoalType(_ icon: String) -> Image {
         switch icon {
         case "target":
