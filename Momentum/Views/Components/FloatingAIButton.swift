@@ -16,26 +16,11 @@ struct FloatingAIButton: View {
             appState.openGlobalChat()
         } label: {
             ZStack {
-                // Main button - square with very rounded corners and gradient
+                // Main button - square with rounded corners and blue color
                 RoundedRectangle(cornerRadius: 20)
-                    .fill(
-                        RadialGradient(
-                            colors: [
-                                Color.momentumViolet,
-                                Color(hex: "6B46C1"),
-                                Color(hex: "1E293B")
-                            ],
-                            center: .center,
-                            startRadius: 5,
-                            endRadius: 35
-                        )
-                    )
+                    .fill(Color.blue)
                     .frame(width: 56, height: 56)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 20)
-                            .strokeBorder(Color.momentumViolet.opacity(0.6), lineWidth: 0.5)
-                    )
-                    .shadow(color: .momentumViolet.opacity(0.4), radius: 15, y: 8)
+                    .shadow(color: .blue.opacity(0.4), radius: 15, y: 8)
 
                 Ph.sparkle.regular
                     .color(.white)
@@ -48,7 +33,7 @@ struct FloatingAIButton: View {
 
 #Preview {
     ZStack {
-        Color.black.ignoresSafeArea()
+        Color.white.ignoresSafeArea()
 
         VStack {
             Spacer()

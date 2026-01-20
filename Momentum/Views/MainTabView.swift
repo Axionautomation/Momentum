@@ -13,6 +13,10 @@ struct MainTabView: View {
 
     var body: some View {
         ZStack {
+            // White background
+            Color.white
+                .ignoresSafeArea()
+
             // Current view based on selection
             Group {
                 switch appState.selectedTab {
@@ -23,7 +27,7 @@ struct MainTabView: View {
                 case .goals:
                     GoalsView()
                 case .progress:
-                    ProgressView()
+                    MomentumProgressView()
                 }
             }
             .transition(.opacity)
@@ -48,7 +52,6 @@ struct MainTabView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
-        .preferredColorScheme(.dark)
     }
 }
 
@@ -67,10 +70,6 @@ struct FloatingTabBar: View {
         .padding(.vertical, 6)
         .background(Color(hex: "1E293B"))
         .clipShape(RoundedRectangle(cornerRadius: 28))
-        .overlay(
-            RoundedRectangle(cornerRadius: 28)
-                .strokeBorder(Color.momentumSurfaceDivider.opacity(0.3), lineWidth: 0.5)
-        )
         .shadow(color: .black.opacity(0.3), radius: 20, y: 10)
     }
 
@@ -82,12 +81,12 @@ struct FloatingTabBar: View {
         } label: {
             VStack(spacing: 3) {
                 tabIcon(for: tab)
-                    .color(appState.selectedTab == tab ? .momentumViolet : .momentumSecondaryText)
+                    .color(appState.selectedTab == tab ? .white : Color(hex: "64748B"))
                     .frame(width: 18, height: 18)
 
                 Text(tab.rawValue)
-                    .font(MomentumFont.body(9))
-                    .foregroundColor(appState.selectedTab == tab ? .momentumViolet : .momentumSecondaryText)
+                    .font(.system(size: 9))
+                    .foregroundColor(appState.selectedTab == tab ? .white : Color(hex: "64748B"))
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 6)
