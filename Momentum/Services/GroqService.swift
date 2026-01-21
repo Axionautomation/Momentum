@@ -105,7 +105,7 @@ class GroqService: ObservableObject {
     // MARK: - Core AI Request Method
 
     private lazy var session: URLSession = {
-        let config = URLSessionConfiguration.default
+        let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 120
         config.timeoutIntervalForResource = 300
         config.waitsForConnectivity = true
@@ -130,6 +130,7 @@ class GroqService: ObservableObject {
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("close", forHTTPHeaderField: "Connection")
 
         let messages = [
             GroqRequest.Message(role: "system", content: systemPrompt),
