@@ -51,7 +51,7 @@ git push origin main
 ## Technical Context
 
 See `CLAUDE.md` for detailed technical documentation including:
-- Tech stack (SwiftUI, iOS 16+, Groq API)
+- Tech stack (SwiftUI, iOS 26+, Groq API)
 - Project structure and key files
 - Design system (colors, typography, components)
 - AI integration details

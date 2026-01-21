@@ -16,15 +16,6 @@ Momentum combines Dan Martell's structured planning framework with AI assistance
 - **Persistence**: UserDefaults (JSON Codable)
 - **Icons**: PhosphorSwift
 
-## UI Design Guidelines
-
-When creating or modifying UI components, use the `/swiftui-design` skill for comprehensive design patterns including:
-- Typography choices (avoid generic fonts)
-- Color palettes and theming
-- Animations and micro-interactions
-- Layout composition
-- Anti-patterns to avoid ("AI slop")
-
 ## Package Dependencies
 
 ### PhosphorSwift (Icons)
@@ -242,7 +233,7 @@ open Momentum.xcodeproj
 
 # Build (Cmd+B)
 # Run on simulator (Cmd+R)
-# Target: iOS 16.0+
+# Target: iOS 26.0+
 ```
 
 ## Configuration
