@@ -14,20 +14,20 @@ struct MainTabView: View {
     var body: some View {
         ZStack {
             // White background
-            Color.white
+            Color.momentumBackground
                 .ignoresSafeArea()
 
             // Current view based on selection
             Group {
                 switch appState.selectedTab {
-                case .today:
-                    TodayView()
-                case .journey:
-                    JourneyView()
-                case .goals:
-                    GoalsView()
+                case .home:
+                    HomeView()
                 case .progress:
-                    MomentumProgressView()
+                    ProgressTabView()
+                case .mindset:
+                    MindsetView()
+                case .profile:
+                    ProfileView()
                 }
             }
             .transition(.opacity)
@@ -85,7 +85,7 @@ struct FloatingTabBar: View {
                     .frame(width: 18, height: 18)
 
                 Text(tab.rawValue)
-                    .font(.system(size: 9))
+                    .font(.system(size: 9, weight: .medium, design: .rounded))
                     .foregroundColor(appState.selectedTab == tab ? .white : Color(hex: "64748B"))
             }
             .frame(maxWidth: .infinity)
@@ -96,14 +96,14 @@ struct FloatingTabBar: View {
 
     private func tabIcon(for tab: AppState.Tab) -> Image {
         switch tab.icon {
-        case "sun":
-            return Ph.sun.bold
-        case "road":
-            return Ph.roadHorizon.bold
-        case "target":
-            return Ph.target.bold
+        case "house":
+            return Ph.house.bold
         case "chart":
-            return Ph.chartBar.bold
+            return Ph.chartLineUp.bold
+        case "brain":
+            return Ph.brain.bold
+        case "user":
+            return Ph.user.bold
         default:
             return Ph.house.bold
         }

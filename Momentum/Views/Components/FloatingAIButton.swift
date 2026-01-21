@@ -18,9 +18,9 @@ struct FloatingAIButton: View {
             ZStack {
                 // Main button - square with rounded corners and blue color
                 RoundedRectangle(cornerRadius: 20)
-                    .fill(Color.blue)
+                    .fill(Color.momentumBlue)
                     .frame(width: 56, height: 56)
-                    .shadow(color: .blue.opacity(0.4), radius: 15, y: 8)
+                    .shadow(color: Color.momentumBlue.opacity(0.4), radius: 15, y: 8)
 
                 Ph.sparkle.regular
                     .color(.white)

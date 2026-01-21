@@ -26,7 +26,7 @@ class AppState: ObservableObject {
     @Published var todaysIdentityTask: MomentumTask?     // 1 identity task
 
     // UI State
-    @Published var selectedTab: Tab = .today
+    @Published var selectedTab: Tab = .home
     @Published var showTaskCompletionCelebration: Bool = false
     @Published var showAllTasksCompleteCelebration: Bool = false
     @Published var completedTaskMessage: String = ""
@@ -36,18 +36,17 @@ class AppState: ObservableObject {
 
     // MARK: - Tab Enum
     enum Tab: String, CaseIterable {
-        case today = "Today"
-        case journey = "Journey"      // Renamed from "road"
-        case goals = "Goals"
-        case progress = "Progress"    // Renamed from "stats"
-        // REMOVED: me (now accessed via profile icon)
+        case home = "Home"
+        case progress = "Progress"
+        case mindset = "Mindset"
+        case profile = "Profile"
 
         var icon: String {
             switch self {
-            case .today: return "sun"
-            case .journey: return "road"
-            case .goals: return "target"
+            case .home: return "house"
             case .progress: return "chart"
+            case .mindset: return "brain"
+            case .profile: return "user"
             }
         }
     }
@@ -534,6 +533,51 @@ class AppState: ObservableObject {
     var currentPowerGoalProgress: Double {
         activeProjectGoal?.powerGoals.first(where: { $0.status == .active })?.completionPercentage ?? 0
     }
+
+    // MARK: - Weekly Points System
+    // Easy = 1pt, Medium = 2pt, Hard = 3pt
+    // Max per day = 6pts (1+2+3), Max per week = 42pts
+
+    /// Points earned this week from completed tasks
+    var weeklyPointsEarned: Int {
+        // Get start of current week (Monday)
+        let calendar = Calendar.current
+        let today = Date()
+        guard let weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: today)) else {
+            return 0
+        }
+
+        var totalPoints = 0
+
+        // Check project goal tasks
+        if let goal = activeProjectGoal {
+            for powerGoal in goal.powerGoals {
+                for milestone in powerGoal.weeklyMilestones {
+                    for task in milestone.tasks {
+                        if task.status == .completed,
+                           let completedAt = task.completedAt,
+                           completedAt >= weekStart {
+                            totalPoints += pointsForDifficulty(task.difficulty)
+                        }
+                    }
+                }
+            }
+        }
+
+        return totalPoints
+    }
+
+    /// Points for a given difficulty
+    func pointsForDifficulty(_ difficulty: TaskDifficulty) -> Int {
+        switch difficulty {
+        case .easy: return 1
+        case .medium: return 2
+        case .hard: return 3
+        }
+    }
+
+    /// Maximum weekly points
+    var weeklyPointsMax: Int { 42 }
 
     // MARK: - Task Notes Management
 
