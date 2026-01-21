@@ -104,18 +104,29 @@ class GroqService: ObservableObject {
 
     // MARK: - Core AI Request Method
 
+    private lazy var session: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 120
+        config.timeoutIntervalForResource = 300
+        config.waitsForConnectivity = true
+        return URLSession(configuration: config)
+    }()
+
+    // MARK: - Core AI Request Method
+
     private func makeRequest(
         systemPrompt: String,
         userPrompt: String,
         temperature: Double = 0.7,
         maxTokens: Int? = nil,
-        requireJSON: Bool = false
+        requireJSON: Bool = false,
+        retryCount: Int = 0
     ) async throws -> String {
         guard let url = URL(string: "\(baseURL)/chat/completions") else {
             throw GroqError.invalidURL
         }
 
-        var request = URLRequest(url: url, timeoutInterval: 120)
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -137,34 +148,74 @@ class GroqService: ObservableObject {
         let encoder = JSONEncoder()
         request.httpBody = try encoder.encode(groqRequest)
 
-        print("📡 Making Groq API request...")
-        let (data, response) = try await URLSession.shared.data(for: request)
+        print("📡 Making Groq API request (Attempt \(retryCount + 1))...")
+        
+        do {
+            let (data, response) = try await session.data(for: request)
 
-        guard let httpResponse = response as? HTTPURLResponse else {
-            print("❌ Invalid HTTP response")
-            throw GroqError.invalidResponse
-        }
-
-        print("📊 HTTP Status: \(httpResponse.statusCode)")
-
-        guard httpResponse.statusCode == 200 else {
-            if let errorString = String(data: data, encoding: .utf8) {
-                print("❌ API Error: \(errorString)")
-                throw GroqError.apiError("Status \(httpResponse.statusCode): \(errorString)")
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("❌ Invalid HTTP response")
+                throw GroqError.invalidResponse
             }
-            throw GroqError.apiError("Status code: \(httpResponse.statusCode)")
+
+            print("📊 HTTP Status: \(httpResponse.statusCode)")
+
+            guard httpResponse.statusCode == 200 else {
+                // If 5xx error or 429, maybe retry
+                if (500...599).contains(httpResponse.statusCode) || httpResponse.statusCode == 429 {
+                    if retryCount < 3 {
+                        print("⚠️ Server error, retrying in \(Double(retryCount + 1) * 2)s...")
+                        try await Task.sleep(nanoseconds: UInt64(Double(retryCount + 1) * 2 * 1_000_000_000))
+                        return try await makeRequest(
+                            systemPrompt: systemPrompt,
+                            userPrompt: userPrompt,
+                            temperature: temperature,
+                            maxTokens: maxTokens,
+                            requireJSON: requireJSON,
+                            retryCount: retryCount + 1
+                        )
+                    }
+                }
+                
+                if let errorString = String(data: data, encoding: .utf8) {
+                    print("❌ API Error: \(errorString)")
+                    throw GroqError.apiError("Status \(httpResponse.statusCode): \(errorString)")
+                }
+                throw GroqError.apiError("Status code: \(httpResponse.statusCode)")
+            }
+
+            let decoder = JSONDecoder()
+            let groqResponse = try decoder.decode(GroqResponse.self, from: data)
+
+            guard let content = groqResponse.choices.first?.message.content else {
+                print("❌ No content in response")
+                throw GroqError.invalidResponse
+            }
+
+            print("✅ Received response (\(content.count) characters)")
+            return content
+            
+        } catch {
+            // Check for network errors to retry
+            let nsError = error as NSError
+            if nsError.domain == NSURLErrorDomain {
+                // Retry for timeouts (-1001), connection lost (-1005), not connected (-1009)
+                let retryableCodes = [-1001, -1005, -1009]
+                if retryableCodes.contains(nsError.code) && retryCount < 3 {
+                    print("⚠️ Network error (\(nsError.code)), retrying in \(Double(retryCount + 1) * 2)s...")
+                    try await Task.sleep(nanoseconds: UInt64(Double(retryCount + 1) * 2 * 1_000_000_000))
+                    return try await makeRequest(
+                        systemPrompt: systemPrompt,
+                        userPrompt: userPrompt,
+                        temperature: temperature,
+                        maxTokens: maxTokens,
+                        requireJSON: requireJSON,
+                        retryCount: retryCount + 1
+                    )
+                }
+            }
+            throw error
         }
-
-        let decoder = JSONDecoder()
-        let groqResponse = try decoder.decode(GroqResponse.self, from: data)
-
-        guard let content = groqResponse.choices.first?.message.content else {
-            print("❌ No content in response")
-            throw GroqError.invalidResponse
-        }
-
-        print("✅ Received response (\(content.count) characters)")
-        return content
     }
 
     // MARK: - Generate Personalized Onboarding Questions
