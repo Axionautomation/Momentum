@@ -106,9 +106,15 @@ class GroqService: ObservableObject {
 
     private lazy var session: URLSession = {
         let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 120
-        config.timeoutIntervalForResource = 300
+        config.timeoutIntervalForRequest = 60
+        config.timeoutIntervalForResource = 120
         config.waitsForConnectivity = true
+        // Force HTTP/1.1 to avoid QUIC/HTTP3 issues on some networks
+        config.httpAdditionalHeaders = ["Connection": "close"]
+        #if os(iOS)
+        // Disable multipath to improve connection stability
+        config.multipathServiceType = .none
+        #endif
         return URLSession(configuration: config)
     }()
 
@@ -200,11 +206,14 @@ class GroqService: ObservableObject {
             // Check for network errors to retry
             let nsError = error as NSError
             if nsError.domain == NSURLErrorDomain {
-                // Retry for timeouts (-1001), connection lost (-1005), not connected (-1009)
-                let retryableCodes = [-1001, -1005, -1009]
-                if retryableCodes.contains(nsError.code) && retryCount < 3 {
-                    print("⚠️ Network error (\(nsError.code)), retrying in \(Double(retryCount + 1) * 2)s...")
-                    try await Task.sleep(nanoseconds: UInt64(Double(retryCount + 1) * 2 * 1_000_000_000))
+                // Retry for timeouts (-1001), connection lost (-1005), not connected (-1009),
+                // network connection lost (-1009), cannot connect to host (-1004)
+                let retryableCodes = [-1001, -1004, -1005, -1009, -1020]
+                if retryableCodes.contains(nsError.code) && retryCount < 4 {
+                    // Exponential backoff: 3s, 6s, 12s, 24s
+                    let delay = Double(pow(2.0, Double(retryCount + 1))) * 1.5
+                    print("⚠️ Network error (\(nsError.code): \(nsError.localizedDescription)), retrying in \(delay)s...")
+                    try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                     return try await makeRequest(
                         systemPrompt: systemPrompt,
                         userPrompt: userPrompt,
@@ -215,7 +224,8 @@ class GroqService: ObservableObject {
                     )
                 }
             }
-            throw error
+            print("❌ Request failed: \(error.localizedDescription)")
+            throw GroqError.networkError(error)
         }
     }
 

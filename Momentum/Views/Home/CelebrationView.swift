@@ -20,22 +20,24 @@ struct CelebrationView: View {
     @State private var particleOpacities: [Double] = []
 
     var body: some View {
-        ZStack {
-            // Background
-            Color.momentumBackground
-                .ignoresSafeArea()
+        GeometryReader { geometry in
+            ZStack {
+                // Background
+                Color.momentumBackground
+                    .ignoresSafeArea()
 
-            // Confetti particles
-            ForEach(0..<20, id: \.self) { index in
-                ConfettiParticle(
-                    color: confettiColors[index % confettiColors.count],
-                    delay: Double(index) * 0.05
-                )
-                .opacity(showConfetti ? 1 : 0)
-            }
+                // Confetti particles
+                ForEach(0..<20, id: \.self) { index in
+                    ConfettiParticle(
+                        color: confettiColors[index % confettiColors.count],
+                        delay: Double(index) * 0.05,
+                        containerSize: geometry.size
+                    )
+                    .opacity(showConfetti ? 1 : 0)
+                }
 
-            // Main content
-            VStack(spacing: MomentumSpacing.section) {
+                // Main content
+                VStack(spacing: MomentumSpacing.section) {
                 Spacer()
 
                 // Trophy/celebration icon
@@ -108,6 +110,7 @@ struct CelebrationView: View {
                 .padding(.bottom, MomentumSpacing.large)
                 .opacity(appeared ? 1 : 0)
             }
+            }
         }
         .onAppear {
             // Staggered animations
@@ -139,6 +142,7 @@ struct CelebrationView: View {
 struct ConfettiParticle: View {
     let color: Color
     let delay: Double
+    let containerSize: CGSize
 
     @State private var position: CGPoint = .zero
     @State private var rotation: Double = 0
@@ -153,9 +157,8 @@ struct ConfettiParticle: View {
             .opacity(opacity)
             .onAppear {
                 // Random starting position at top
-                let screenWidth = UIScreen.main.bounds.width
                 position = CGPoint(
-                    x: CGFloat.random(in: 0...screenWidth),
+                    x: CGFloat.random(in: 0...containerSize.width),
                     y: -20
                 )
 
@@ -166,7 +169,7 @@ struct ConfettiParticle: View {
                 ) {
                     position = CGPoint(
                         x: position.x + CGFloat.random(in: -100...100),
-                        y: UIScreen.main.bounds.height + 50
+                        y: containerSize.height + 50
                     )
                     rotation = Double.random(in: 360...720)
                 }

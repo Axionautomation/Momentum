@@ -103,7 +103,7 @@ class ChatViewModel: ObservableObject {
     // MARK: - Suggested Prompts
 
     func getSuggestedPrompts() -> [String] {
-        if let task = taskContext {
+        if taskContext != nil {
             return [
                 "Break this into smaller steps",
                 "Help me get started",

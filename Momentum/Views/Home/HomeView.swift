@@ -136,7 +136,7 @@ struct HomeView: View {
 
     private func completeTask(_ task: MomentumTask) {
         // Add to completed set for immediate UI update
-        withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+        _ = withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
             completedTaskIds.insert(task.id)
         }
 

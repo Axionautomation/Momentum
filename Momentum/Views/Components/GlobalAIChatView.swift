@@ -59,14 +59,14 @@ struct GlobalAIChatView: View {
                             .padding(.top, MomentumSpacing.standard)
                             .padding(.bottom, MomentumSpacing.section)
                         }
-                        .onChange(of: viewModel.messages.count) { _ in
+                        .onChange(of: viewModel.messages.count) { _, _ in
                             withAnimation {
                                 if let lastMessage = viewModel.messages.last {
                                     proxy.scrollTo(lastMessage.id, anchor: .bottom)
                                 }
                             }
                         }
-                        .onChange(of: viewModel.isLoading) { isLoading in
+                        .onChange(of: viewModel.isLoading) { _, isLoading in
                             if isLoading {
                                 withAnimation {
                                     proxy.scrollTo("thinking", anchor: .bottom)
