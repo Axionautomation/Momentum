@@ -14,12 +14,13 @@ struct ContentView: View {
         Group {
             if appState.isOnboarded {
                 MainTabView()
+                    .preferredColorScheme(.dark)
             } else {
                 OnboardingView()
+                    .preferredColorScheme(.light)
             }
         }
         .environmentObject(appState)
-        .preferredColorScheme(.dark)
     }
 }
 
