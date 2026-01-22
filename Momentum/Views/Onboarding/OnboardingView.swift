@@ -7,6 +7,7 @@
 
 import SwiftUI
 import PhosphorSwift
+import Combine
 
 struct OnboardingView: View {
     @EnvironmentObject var appState: AppState
