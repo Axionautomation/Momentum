@@ -170,9 +170,11 @@ class OnboardingViewModel: ObservableObject {
                 goalType: selectedGoalType,
                 answers: answers
             )
-            async let delayTask = Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds minimum
 
-            let (plan, _) = try await (planTask, delayTask)
+            // Run plan generation and minimum delay concurrently
+            let plan = try await planTask
+            try await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds minimum
+
             generatedPlan = plan
 
             withAnimation(.easeInOut(duration: 0.3)) {
@@ -218,11 +220,10 @@ class OnboardingViewModel: ObservableObject {
                 id: UUID(),
                 goalId: goalId,
                 monthNumber: index + 1,
-                title: generatedPG.title,
+                title: generatedPG.goal,
                 description: generatedPG.description,
-                status: index == 0 ? .active : .notStarted,
+                status: index == 0 ? .active : .locked,
                 startDate: Calendar.current.date(byAdding: .month, value: index, to: Date()),
-                targetDate: Calendar.current.date(byAdding: .month, value: index + 1, to: Date()),
                 completionPercentage: 0,
                 weeklyMilestones: []
             )
@@ -831,7 +832,7 @@ struct QuestionsView: View {
                                                     .strokeBorder(Color.momentumCardBorder, lineWidth: 1)
                                             )
                                     )
-                                    .onChange(of: customAnswer) { newValue in
+                                    .onChange(of: customAnswer) { _, newValue in
                                         if !newValue.isEmpty {
                                             selectedAnswer = ""
                                         }
@@ -1174,7 +1175,7 @@ struct ProjectPlanPreview: View {
                     .font(MomentumFont.body(14))
                     .foregroundColor(.momentumTextSecondary)
 
-                ForEach(Array(plan.powerGoals.prefix(3).enumerated()), id: \.element.title) { index, powerGoal in
+                ForEach(Array(plan.powerGoals.prefix(3).enumerated()), id: \.element.goal) { index, powerGoal in
                     HStack(alignment: .top, spacing: MomentumSpacing.compact) {
                         Text("\(index + 1)")
                             .font(MomentumFont.bodyMedium(14))
@@ -1186,7 +1187,7 @@ struct ProjectPlanPreview: View {
                             )
 
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(powerGoal.title)
+                            Text(powerGoal.goal)
                                 .font(MomentumFont.bodyMedium(16))
                                 .foregroundColor(.momentumTextPrimary)
 
