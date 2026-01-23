@@ -218,7 +218,7 @@ class OnboardingViewModel: ObservableObject {
 
         // Get the start of the current week (Monday)
         let calendar = Calendar.current
-        var weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: today)) ?? today
+        let weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: today)) ?? today
 
         let powerGoals = aiPlan.powerGoals.enumerated().map { index, generatedPG in
             let powerGoalId = UUID()

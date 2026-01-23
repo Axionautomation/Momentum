@@ -7,7 +7,7 @@
 
 import SwiftUI
 
-struct DifficultyBadge: View {
+struct DifficultyCornerBadge: View {
     let difficulty: TaskDifficulty
 
     var body: some View {
@@ -89,9 +89,9 @@ struct DifficultyBadge: View {
 
 #Preview {
     HStack(spacing: 20) {
-        DifficultyBadge(difficulty: .easy)
-        DifficultyBadge(difficulty: .medium)
-        DifficultyBadge(difficulty: .hard)
+        DifficultyCornerBadge(difficulty: .easy)
+        DifficultyCornerBadge(difficulty: .medium)
+        DifficultyCornerBadge(difficulty: .hard)
     }
     .padding()
     .background(Color.momentumBackgroundSecondary)

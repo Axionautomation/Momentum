@@ -279,7 +279,7 @@ struct TasksSection: View {
                             VStack {
                                 HStack {
                                     Spacer()
-                                    DifficultyBadge(difficulty: currentTask.difficulty)
+                                    DifficultyCornerBadge(difficulty: currentTask.difficulty)
                                         .padding(.trailing, MomentumSpacing.standard)
                                         .padding(.top, MomentumSpacing.compact)
                                 }
