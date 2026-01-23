@@ -92,6 +92,38 @@ struct TaskCardView: View {
         .background(Color.momentumCardBackground)
         .clipShape(RoundedRectangle(cornerRadius: MomentumRadius.medium))
         .overlay(
+            // Hold fill animation - blue fills from edges to center
+            GeometryReader { geometry in
+                ZStack {
+                    // Top edge
+                    Rectangle()
+                        .fill(Color.momentumBlue.opacity(0.15))
+                        .frame(height: geometry.size.height * holdProgress * 0.5)
+                        .frame(maxHeight: .infinity, alignment: .top)
+
+                    // Bottom edge
+                    Rectangle()
+                        .fill(Color.momentumBlue.opacity(0.15))
+                        .frame(height: geometry.size.height * holdProgress * 0.5)
+                        .frame(maxHeight: .infinity, alignment: .bottom)
+
+                    // Left edge
+                    Rectangle()
+                        .fill(Color.momentumBlue.opacity(0.15))
+                        .frame(width: geometry.size.width * holdProgress * 0.5)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    // Right edge
+                    Rectangle()
+                        .fill(Color.momentumBlue.opacity(0.15))
+                        .frame(width: geometry.size.width * holdProgress * 0.5)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: MomentumRadius.medium))
+            .allowsHitTesting(false)
+        )
+        .overlay(
             RoundedRectangle(cornerRadius: MomentumRadius.medium)
                 .strokeBorder(
                     difficultyBorderColor,
