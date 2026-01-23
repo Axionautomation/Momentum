@@ -322,35 +322,35 @@ struct WelcomeView: View {
         VStack(spacing: 0) {
             Spacer()
 
-            VStack(spacing: MomentumSpacing.section) {
+            VStack(spacing: MomentumSpacing.comfortable) {
                 // Icon
                 ZStack {
                     Circle()
                         .fill(
                             LinearGradient(
-                                colors: [Color.momentumBlue.opacity(0.2), Color.momentumBlue.opacity(0.1)],
+                                colors: [Color.momentumBlue.opacity(0.15), Color.momentumBlue.opacity(0.08)],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
                         )
-                        .frame(width: 100, height: 100)
+                        .frame(width: 64, height: 64)
 
                     Ph.sparkle.fill
-                        .font(.system(size: 48))
+                        .font(.system(size: 28))
                         .foregroundStyle(MomentumGradients.primary)
                 }
 
                 VStack(spacing: MomentumSpacing.compact) {
                     Text("Welcome to Momentum")
-                        .font(MomentumFont.display(32))
+                        .font(MomentumFont.display(28))
                         .foregroundColor(.momentumTextPrimary)
                         .multilineTextAlignment(.center)
 
                     Text("Where your biggest dreams\nbecome tomorrow's action")
-                        .font(MomentumFont.body(18))
+                        .font(MomentumFont.body(17))
                         .foregroundColor(.momentumTextSecondary)
                         .multilineTextAlignment(.center)
-                        .lineSpacing(4)
+                        .lineSpacing(2)
                 }
             }
             .padding(.horizontal, MomentumSpacing.large)
@@ -478,33 +478,35 @@ struct GoalTypeCard: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: MomentumSpacing.compact) {
+            VStack(alignment: .leading, spacing: MomentumSpacing.tight) {
                 HStack(spacing: MomentumSpacing.compact) {
                     icon
-                        .font(.system(size: 28))
+                        .font(.system(size: 22))
                         .foregroundStyle(isSelected ? MomentumGradients.primary : LinearGradient(colors: [.momentumTextSecondary], startPoint: .leading, endPoint: .trailing))
+                        .frame(width: 24, height: 24)
 
                     Text(title)
-                        .font(MomentumFont.headingMedium(20))
+                        .font(MomentumFont.headingMedium(18))
                         .foregroundColor(isSelected ? .momentumBlue : .momentumTextPrimary)
 
                     Spacer()
 
                     if isSelected {
                         Ph.checkCircle.fill
-                            .font(.system(size: 24))
+                            .font(.system(size: 20))
                             .foregroundStyle(MomentumGradients.primary)
                     }
                 }
 
                 Text(description)
-                    .font(MomentumFont.body(15))
+                    .font(MomentumFont.body(14))
                     .foregroundColor(.momentumTextSecondary)
                     .multilineTextAlignment(.leading)
+                    .lineLimit(2)
 
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text("Examples:")
-                        .font(MomentumFont.label(13))
+                        .font(MomentumFont.label(12))
                         .foregroundColor(.momentumTextTertiary)
 
                     ForEach(examples, id: \.self) { example in
@@ -514,13 +516,13 @@ struct GoalTypeCard: View {
                                 .frame(width: 3, height: 3)
 
                             Text(example)
-                                .font(MomentumFont.body(14))
+                                .font(MomentumFont.body(13))
                                 .foregroundColor(.momentumTextSecondary)
                         }
                     }
                 }
             }
-            .padding(MomentumSpacing.standard)
+            .padding(MomentumSpacing.compact)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .momentumCard(highlighted: isSelected)
@@ -642,8 +644,9 @@ struct VisionInputView: View {
                     VStack(alignment: .leading, spacing: MomentumSpacing.compact) {
                         HStack(spacing: 6) {
                             Ph.lightbulb.regular
-                                .font(.system(size: 16))
+                                .font(.system(size: 14))
                                 .foregroundColor(.momentumTextTertiary)
+                                .frame(width: 14, height: 14)
 
                             Text("Get inspired:")
                                 .font(MomentumFont.label(14))
@@ -943,13 +946,13 @@ struct GeneratingPlanView: View {
             // Loading Animation
             ZStack {
                 Circle()
-                    .stroke(Color.momentumCardBorder, lineWidth: 3)
-                    .frame(width: 80, height: 80)
+                    .stroke(Color.momentumCardBorder, lineWidth: 2.5)
+                    .frame(width: 56, height: 56)
 
                 Circle()
                     .trim(from: 0, to: 0.7)
-                    .stroke(MomentumGradients.primary, style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                    .frame(width: 80, height: 80)
+                    .stroke(MomentumGradients.primary, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                    .frame(width: 56, height: 56)
                     .rotationEffect(.degrees(-90))
                     .animation(
                         Animation.linear(duration: 1.5)
@@ -975,16 +978,17 @@ struct GeneratingPlanView: View {
             Spacer()
 
             // Motivational Quote Carousel
-            VStack(spacing: MomentumSpacing.standard) {
+            VStack(spacing: MomentumSpacing.compact) {
                 Ph.quotes.fill
-                    .font(.system(size: 32))
+                    .font(.system(size: 24))
                     .foregroundStyle(MomentumGradients.primary)
+                    .frame(width: 24, height: 24)
 
                 Text(motivationalQuotes[currentQuoteIndex])
-                    .font(MomentumFont.bodyMedium(18))
+                    .font(MomentumFont.bodyMedium(16))
                     .foregroundColor(.momentumTextPrimary)
                     .multilineTextAlignment(.center)
-                    .lineSpacing(6)
+                    .lineSpacing(4)
                     .id(currentQuoteIndex)
                     .transition(.asymmetric(
                         insertion: .opacity.combined(with: .move(edge: .bottom)),
@@ -996,13 +1000,13 @@ struct GeneratingPlanView: View {
                     ForEach(0..<motivationalQuotes.count, id: \.self) { index in
                         Circle()
                             .fill(index == currentQuoteIndex ? Color.momentumBlue : Color.momentumCardBorder)
-                            .frame(width: 6, height: 6)
+                            .frame(width: 5, height: 5)
                     }
                 }
                 .padding(.top, MomentumSpacing.tight)
             }
-            .padding(.horizontal, MomentumSpacing.large)
-            .padding(.vertical, MomentumSpacing.section)
+            .padding(.horizontal, MomentumSpacing.comfortable)
+            .padding(.vertical, MomentumSpacing.comfortable)
             .background(
                 RoundedRectangle(cornerRadius: MomentumRadius.medium)
                     .fill(Color.momentumBackgroundSecondary)
@@ -1065,15 +1069,15 @@ struct PlanPreviewView: View {
                             Circle()
                                 .fill(
                                     LinearGradient(
-                                        colors: [Color.momentumSuccess.opacity(0.2), Color.momentumSuccess.opacity(0.1)],
+                                        colors: [Color.momentumSuccess.opacity(0.15), Color.momentumSuccess.opacity(0.08)],
                                         startPoint: .topLeading,
                                         endPoint: .bottomTrailing
                                     )
                                 )
-                                .frame(width: 80, height: 80)
+                                .frame(width: 64, height: 64)
 
                             Ph.checkCircle.fill
-                                .font(.system(size: 48))
+                                .font(.system(size: 32))
                                 .foregroundStyle(LinearGradient(
                                     colors: [.momentumSuccess, Color(hex: "34D399")],
                                     startPoint: .topLeading,
@@ -1083,7 +1087,7 @@ struct PlanPreviewView: View {
 
                         Spacer()
                     }
-                    .padding(.top, MomentumSpacing.comfortable)
+                    .padding(.top, MomentumSpacing.standard)
 
                     // Title
                     VStack(spacing: MomentumSpacing.tight) {
@@ -1142,11 +1146,12 @@ struct ProjectPlanPreview: View {
             VStack(alignment: .leading, spacing: MomentumSpacing.tight) {
                 HStack(spacing: 6) {
                     Ph.target.fill
-                        .font(.system(size: 20))
+                        .font(.system(size: 18))
                         .foregroundColor(.momentumBlue)
+                        .frame(width: 18, height: 18)
 
                     Text("Your Refined Vision")
-                        .font(MomentumFont.headingMedium(18))
+                        .font(MomentumFont.headingMedium(17))
                         .foregroundColor(.momentumTextPrimary)
                 }
 
@@ -1163,11 +1168,12 @@ struct ProjectPlanPreview: View {
             VStack(alignment: .leading, spacing: MomentumSpacing.tight) {
                 HStack(spacing: 6) {
                     Ph.listChecks.fill
-                        .font(.system(size: 20))
+                        .font(.system(size: 18))
                         .foregroundColor(.momentumBlue)
+                        .frame(width: 18, height: 18)
 
                     Text("12 Power Goals")
-                        .font(MomentumFont.headingMedium(18))
+                        .font(MomentumFont.headingMedium(17))
                         .foregroundColor(.momentumTextPrimary)
                 }
 
@@ -1225,11 +1231,12 @@ struct HabitPlanPreview: View {
             VStack(alignment: .leading, spacing: MomentumSpacing.tight) {
                 HStack(spacing: 6) {
                     Ph.repeat.fill
-                        .font(.system(size: 20))
+                        .font(.system(size: 18))
                         .foregroundColor(.momentumBlue)
+                        .frame(width: 18, height: 18)
 
                     Text("Your Habit")
-                        .font(MomentumFont.headingMedium(18))
+                        .font(MomentumFont.headingMedium(17))
                         .foregroundColor(.momentumTextPrimary)
                 }
 
@@ -1286,11 +1293,12 @@ struct IdentityPlanPreview: View {
             VStack(alignment: .leading, spacing: MomentumSpacing.tight) {
                 HStack(spacing: 6) {
                     Ph.userCircle.fill
-                        .font(.system(size: 20))
+                        .font(.system(size: 18))
                         .foregroundColor(.momentumBlue)
+                        .frame(width: 18, height: 18)
 
                     Text("Your Identity")
-                        .font(MomentumFont.headingMedium(18))
+                        .font(MomentumFont.headingMedium(17))
                         .foregroundColor(.momentumTextPrimary)
                 }
 
@@ -1313,11 +1321,12 @@ struct IdentityPlanPreview: View {
             VStack(alignment: .leading, spacing: MomentumSpacing.tight) {
                 HStack(spacing: 6) {
                     Ph.heart.fill
-                        .font(.system(size: 20))
+                        .font(.system(size: 18))
                         .foregroundColor(.momentumBlue)
+                        .frame(width: 18, height: 18)
 
                     Text("Evidence Categories")
-                        .font(MomentumFont.headingMedium(18))
+                        .font(MomentumFont.headingMedium(17))
                         .foregroundColor(.momentumTextPrimary)
                 }
 
@@ -1338,22 +1347,24 @@ struct IdentityPlanPreview: View {
             VStack(alignment: .leading, spacing: MomentumSpacing.tight) {
                 HStack(spacing: 6) {
                     Ph.flagCheckered.fill
-                        .font(.system(size: 20))
+                        .font(.system(size: 18))
                         .foregroundColor(.momentumBlue)
+                        .frame(width: 18, height: 18)
 
                     Text("Identity Milestones")
-                        .font(MomentumFont.headingMedium(18))
+                        .font(MomentumFont.headingMedium(17))
                         .foregroundColor(.momentumTextPrimary)
                 }
 
                 ForEach(Array(plan.milestones.prefix(3).enumerated()), id: \.element.title) { index, milestone in
                     HStack(alignment: .top, spacing: MomentumSpacing.compact) {
                         Ph.checkCircle.regular
-                            .font(.system(size: 20))
+                            .font(.system(size: 16))
                             .foregroundColor(.momentumTextTertiary)
+                            .frame(width: 16, height: 16)
 
                         Text(milestone.title)
-                            .font(MomentumFont.bodyMedium(16))
+                            .font(MomentumFont.bodyMedium(15))
                             .foregroundColor(.momentumTextPrimary)
 
                         Spacer()
