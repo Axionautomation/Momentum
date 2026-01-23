@@ -59,49 +59,47 @@ struct TaskCardView: View {
             if isHolding {
                 ZStack {
                     Circle()
-                        .stroke(Color.white.opacity(0.3), lineWidth: 3)
+                        .stroke(Color.momentumBlue.opacity(0.2), lineWidth: 3)
                         .frame(width: 32, height: 32)
 
                     Circle()
                         .trim(from: 0, to: holdProgress)
-                        .stroke(Color.white, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                        .stroke(Color.momentumBlue, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                         .frame(width: 32, height: 32)
                         .rotationEffect(.degrees(-90))
                 }
             }
         }
         .padding(MomentumSpacing.standard)
-        .background(
-            LinearGradient(
-                colors: [Color(hex: "#FFD699"), Color(hex: "#FFB84D")],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 36))
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
         .overlay(
             // Hold fill animation - rounded square expands from center
             GeometryReader { geometry in
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: 12)
                     .fill(
                         LinearGradient(
-                            colors: [Color.white.opacity(0.3), Color.white.opacity(0.2)],
+                            colors: [Color.momentumViolet.opacity(0.7), Color.momentumBlue.opacity(0.6)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
                     )
                     .scaleEffect(holdProgress)
-                    .opacity(holdProgress * 0.8)
                     .frame(width: geometry.size.width * 0.9, height: geometry.size.height * 0.9)
                     .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 36))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
             .allowsHitTesting(false)
         )
         .overlay(
+            // Subtle border
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(Color.black.opacity(0.08), lineWidth: 1)
+        )
+        .overlay(
             // Completion glow
-            RoundedRectangle(cornerRadius: 36)
-                .stroke(Color.white, lineWidth: 4)
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.momentumBlue, lineWidth: 4)
                 .opacity(showCompletionGlow ? 0.8 : 0)
                 .blur(radius: showCompletionGlow ? 4 : 0)
         )
