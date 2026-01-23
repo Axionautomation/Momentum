@@ -559,7 +559,7 @@ struct AIGeneratedPlan: Codable {
     let visionRefined: String
     let powerGoals: [GeneratedPowerGoal]
     let currentPowerGoal: GeneratedCurrentPowerGoal
-    let anchorTask: String
+    let anchorTask: String?
 
     enum CodingKeys: String, CodingKey {
         case visionRefined = "vision_refined"
