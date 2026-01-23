@@ -253,10 +253,20 @@ class GroqService: ObservableObject {
                 // network connection lost (-1009), cannot connect to host (-1004)
                 let retryableCodes = [-1001, -1004, -1005, -1009, -1020]
                 if retryableCodes.contains(nsError.code) && retryCount < 4 {
-                    // Exponential backoff: 3s, 6s, 12s, 24s
-                    let delay = Double(pow(2.0, Double(retryCount + 1))) * 1.5
-                    print("⚠️ Network error (\(nsError.code): \(nsError.localizedDescription)), retrying in \(delay)s...")
-                    try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                    // For -1005 (connection lost), this is likely HTTP/3 failing
+                    // Reset the session to force protocol renegotiation
+                    if nsError.code == -1005 {
+                        print("⚠️ HTTP/3 connection failed (-1005), resetting session to force fallback...")
+                        resetSession()
+                        // Shorter delay for -1005 since we're forcing a reset
+                        try await Task.sleep(nanoseconds: 1_000_000_000)  // 1 second
+                    } else {
+                        // Exponential backoff for other errors: 3s, 6s, 12s, 24s
+                        let delay = Double(pow(2.0, Double(retryCount + 1))) * 1.5
+                        print("⚠️ Network error (\(nsError.code): \(nsError.localizedDescription)), retrying in \(delay)s...")
+                        try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                    }
+
                     return try await makeRequest(
                         systemPrompt: systemPrompt,
                         userPrompt: userPrompt,
