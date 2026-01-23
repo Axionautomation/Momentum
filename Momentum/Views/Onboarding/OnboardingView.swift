@@ -214,18 +214,79 @@ class OnboardingViewModel: ObservableObject {
     // Convert AIGeneratedPlan to Goal
     private func convertToGoal(aiPlan: AIGeneratedPlan, userId: UUID, goalType: GoalType) -> Goal {
         let goalId = UUID()
+        let today = Date()
+
+        // Get the start of the current week (Monday)
+        let calendar = Calendar.current
+        var weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: today)) ?? today
 
         let powerGoals = aiPlan.powerGoals.enumerated().map { index, generatedPG in
-            PowerGoal(
-                id: UUID(),
+            let powerGoalId = UUID()
+
+            // For the first (active) power goal, populate with weekly milestones and tasks
+            let weeklyMilestones: [WeeklyMilestone] = if index == 0 {
+                aiPlan.currentPowerGoal.weeklyMilestones.enumerated().map { weekIndex, generatedMilestone in
+                    let milestoneId = UUID()
+
+                    // Calculate week start date (current week + weekIndex)
+                    let milestoneWeekStart = calendar.date(byAdding: .weekOfYear, value: weekIndex, to: weekStart) ?? weekStart
+
+                    // Convert daily tasks to MomentumTask
+                    let tasks = generatedMilestone.dailyTasks.flatMap { dailyTask in
+                        dailyTask.tasks.map { generatedTask in
+                            // Calculate scheduled date (week start + day offset)
+                            let dayOffset = dailyTask.day - 1 // day is 1-indexed
+                            let scheduledDate = calendar.date(byAdding: .day, value: dayOffset, to: milestoneWeekStart) ?? milestoneWeekStart
+
+                            // Parse difficulty
+                            let difficulty: TaskDifficulty = {
+                                switch generatedTask.difficulty.lowercased() {
+                                case "easy": return .easy
+                                case "medium": return .medium
+                                case "hard": return .hard
+                                default: return .medium
+                                }
+                            }()
+
+                            return MomentumTask(
+                                id: UUID(),
+                                weeklyMilestoneId: milestoneId,
+                                goalId: goalId,
+                                title: generatedTask.title,
+                                taskDescription: generatedTask.description,
+                                difficulty: difficulty,
+                                estimatedMinutes: generatedTask.estimatedMinutes,
+                                isAnchorTask: false,
+                                scheduledDate: scheduledDate,
+                                status: .pending
+                            )
+                        }
+                    }
+
+                    return WeeklyMilestone(
+                        id: milestoneId,
+                        powerGoalId: powerGoalId,
+                        weekNumber: generatedMilestone.week,
+                        milestoneText: generatedMilestone.milestone,
+                        status: weekIndex == 0 ? .inProgress : .pending,
+                        startDate: milestoneWeekStart,
+                        tasks: tasks
+                    )
+                }
+            } else {
+                []
+            }
+
+            return PowerGoal(
+                id: powerGoalId,
                 goalId: goalId,
                 monthNumber: index + 1,
                 title: generatedPG.goal,
                 description: generatedPG.description,
                 status: index == 0 ? .active : .locked,
-                startDate: Calendar.current.date(byAdding: .month, value: index, to: Date()),
+                startDate: calendar.date(byAdding: .month, value: index, to: Date()),
                 completionPercentage: 0,
-                weeklyMilestones: []
+                weeklyMilestones: weeklyMilestones
             )
         }
 
@@ -336,7 +397,9 @@ struct WelcomeView: View {
                         .frame(width: 64, height: 64)
 
                     Ph.sparkle.fill
-                        .font(.system(size: 28))
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 28, height: 28)
                         .foregroundStyle(MomentumGradients.primary)
                 }
 
@@ -359,11 +422,16 @@ struct WelcomeView: View {
 
             // Bottom section
             VStack(spacing: MomentumSpacing.standard) {
-                Button(action: onContinue) {
+                Button(action: {
+                    SoundManager.shared.lightHaptic()
+                    onContinue()
+                }) {
                     HStack(spacing: MomentumSpacing.tight) {
                         Text("Begin Your Journey")
                         Ph.arrowRight.regular
-                            .font(.system(size: 20))
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 20, height: 20)
                     }
                 }
                 .buttonStyle(PrimaryButtonStyle())
@@ -392,7 +460,9 @@ struct GoalTypeSelectionView: View {
                 Button(action: onBack) {
                     HStack(spacing: 4) {
                         Ph.caretLeft.regular
-                            .font(.system(size: 20))
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 20, height: 20)
                         Text("Back")
                             .font(MomentumFont.bodyMedium())
                     }
@@ -454,11 +524,16 @@ struct GoalTypeSelectionView: View {
             }
 
             // Continue Button
-            Button(action: onContinue) {
+            Button(action: {
+                SoundManager.shared.lightHaptic()
+                onContinue()
+            }) {
                 HStack(spacing: MomentumSpacing.tight) {
                     Text("Continue")
                     Ph.arrowRight.regular
-                        .font(.system(size: 20))
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 20, height: 20)
                 }
             }
             .buttonStyle(PrimaryButtonStyle())
@@ -481,9 +556,10 @@ struct GoalTypeCard: View {
             VStack(alignment: .leading, spacing: MomentumSpacing.tight) {
                 HStack(spacing: MomentumSpacing.compact) {
                     icon
-                        .font(.system(size: 22))
-                        .foregroundStyle(isSelected ? MomentumGradients.primary : LinearGradient(colors: [.momentumTextSecondary], startPoint: .leading, endPoint: .trailing))
+                        .resizable()
+                        .scaledToFit()
                         .frame(width: 24, height: 24)
+                        .foregroundStyle(isSelected ? MomentumGradients.primary : LinearGradient(colors: [.momentumTextSecondary], startPoint: .leading, endPoint: .trailing))
 
                     Text(title)
                         .font(MomentumFont.headingMedium(18))
@@ -493,7 +569,9 @@ struct GoalTypeCard: View {
 
                     if isSelected {
                         Ph.checkCircle.fill
-                            .font(.system(size: 20))
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 20, height: 20)
                             .foregroundStyle(MomentumGradients.primary)
                     }
                 }
@@ -583,7 +661,9 @@ struct VisionInputView: View {
                 Button(action: onBack) {
                     HStack(spacing: 4) {
                         Ph.caretLeft.regular
-                            .font(.system(size: 20))
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 20, height: 20)
                         Text("Back")
                             .font(MomentumFont.bodyMedium())
                     }
@@ -644,9 +724,10 @@ struct VisionInputView: View {
                     VStack(alignment: .leading, spacing: MomentumSpacing.compact) {
                         HStack(spacing: 6) {
                             Ph.lightbulb.regular
-                                .font(.system(size: 14))
-                                .foregroundColor(.momentumTextTertiary)
+                                .resizable()
+                                .scaledToFit()
                                 .frame(width: 14, height: 14)
+                                .foregroundColor(.momentumTextTertiary)
 
                             Text("Get inspired:")
                                 .font(MomentumFont.label(14))
@@ -666,7 +747,9 @@ struct VisionInputView: View {
                                     Spacer()
 
                                     Ph.arrowRight.regular
-                                        .font(.system(size: 14))
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(width: 14, height: 14)
                                         .foregroundColor(.momentumTextTertiary)
                                 }
                                 .padding(.vertical, MomentumSpacing.compact)
@@ -682,11 +765,16 @@ struct VisionInputView: View {
             }
 
             // Continue Button
-            Button(action: onContinue) {
+            Button(action: {
+                SoundManager.shared.lightHaptic()
+                onContinue()
+            }) {
                 HStack(spacing: MomentumSpacing.tight) {
                     Text("Continue")
                     Ph.arrowRight.regular
-                        .font(.system(size: 20))
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 20, height: 20)
                 }
             }
             .buttonStyle(PrimaryButtonStyle())
@@ -731,7 +819,9 @@ struct QuestionsView: View {
                 Button(action: onBack) {
                     HStack(spacing: 4) {
                         Ph.caretLeft.regular
-                            .font(.system(size: 20))
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 20, height: 20)
                         Text("Back")
                             .font(MomentumFont.bodyMedium())
                     }
@@ -799,7 +889,9 @@ struct QuestionsView: View {
 
                                             if selectedAnswer == option {
                                                 Ph.checkCircle.fill
-                                                    .font(.system(size: 24))
+                                                    .resizable()
+                                                    .scaledToFit()
+                                                    .frame(width: 24, height: 24)
                                                     .foregroundStyle(MomentumGradients.primary)
                                             } else {
                                                 Circle()
@@ -849,6 +941,7 @@ struct QuestionsView: View {
 
                 // Continue Button
                 Button(action: {
+                    SoundManager.shared.lightHaptic()
                     saveCurrentAnswer()
                     if isLastQuestion {
                         onContinue()
@@ -863,7 +956,9 @@ struct QuestionsView: View {
                     HStack(spacing: MomentumSpacing.tight) {
                         Text(isLastQuestion ? "Generate My Plan" : "Next Question")
                         Ph.arrowRight.regular
-                            .font(.system(size: 20))
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 20, height: 20)
                     }
                 }
                 .buttonStyle(PrimaryButtonStyle())
@@ -980,9 +1075,10 @@ struct GeneratingPlanView: View {
             // Motivational Quote Carousel
             VStack(spacing: MomentumSpacing.compact) {
                 Ph.quotes.fill
-                    .font(.system(size: 24))
-                    .foregroundStyle(MomentumGradients.primary)
+                    .resizable()
+                    .scaledToFit()
                     .frame(width: 24, height: 24)
+                    .foregroundStyle(MomentumGradients.primary)
 
                 Text(motivationalQuotes[currentQuoteIndex])
                     .font(MomentumFont.bodyMedium(16))
@@ -1047,7 +1143,9 @@ struct PlanPreviewView: View {
                 Button(action: onBack) {
                     HStack(spacing: 4) {
                         Ph.caretLeft.regular
-                            .font(.system(size: 20))
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 20, height: 20)
                         Text("Back")
                             .font(MomentumFont.bodyMedium())
                     }
@@ -1077,7 +1175,9 @@ struct PlanPreviewView: View {
                                 .frame(width: 64, height: 64)
 
                             Ph.checkCircle.fill
-                                .font(.system(size: 32))
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 32, height: 32)
                                 .foregroundStyle(LinearGradient(
                                     colors: [.momentumSuccess, Color(hex: "34D399")],
                                     startPoint: .topLeading,
@@ -1121,11 +1221,16 @@ struct PlanPreviewView: View {
             }
 
             // Confirm Button
-            Button(action: onConfirm) {
+            Button(action: {
+                SoundManager.shared.successHaptic()
+                onConfirm()
+            }) {
                 HStack(spacing: MomentumSpacing.tight) {
                     Text("Start My Journey")
                     Ph.rocketLaunch.fill
-                        .font(.system(size: 20))
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 20, height: 20)
                 }
             }
             .buttonStyle(PrimaryButtonStyle())
@@ -1146,9 +1251,10 @@ struct ProjectPlanPreview: View {
             VStack(alignment: .leading, spacing: MomentumSpacing.tight) {
                 HStack(spacing: 6) {
                     Ph.target.fill
-                        .font(.system(size: 18))
-                        .foregroundColor(.momentumBlue)
+                        .resizable()
+                        .scaledToFit()
                         .frame(width: 18, height: 18)
+                        .foregroundColor(.momentumBlue)
 
                     Text("Your Refined Vision")
                         .font(MomentumFont.headingMedium(17))
@@ -1168,9 +1274,10 @@ struct ProjectPlanPreview: View {
             VStack(alignment: .leading, spacing: MomentumSpacing.tight) {
                 HStack(spacing: 6) {
                     Ph.listChecks.fill
-                        .font(.system(size: 18))
-                        .foregroundColor(.momentumBlue)
+                        .resizable()
+                        .scaledToFit()
                         .frame(width: 18, height: 18)
+                        .foregroundColor(.momentumBlue)
 
                     Text("12 Power Goals")
                         .font(MomentumFont.headingMedium(17))
@@ -1231,9 +1338,10 @@ struct HabitPlanPreview: View {
             VStack(alignment: .leading, spacing: MomentumSpacing.tight) {
                 HStack(spacing: 6) {
                     Ph.repeat.fill
-                        .font(.system(size: 18))
-                        .foregroundColor(.momentumBlue)
+                        .resizable()
+                        .scaledToFit()
                         .frame(width: 18, height: 18)
+                        .foregroundColor(.momentumBlue)
 
                     Text("Your Habit")
                         .font(MomentumFont.headingMedium(17))
@@ -1293,9 +1401,10 @@ struct IdentityPlanPreview: View {
             VStack(alignment: .leading, spacing: MomentumSpacing.tight) {
                 HStack(spacing: 6) {
                     Ph.userCircle.fill
-                        .font(.system(size: 18))
-                        .foregroundColor(.momentumBlue)
+                        .resizable()
+                        .scaledToFit()
                         .frame(width: 18, height: 18)
+                        .foregroundColor(.momentumBlue)
 
                     Text("Your Identity")
                         .font(MomentumFont.headingMedium(17))
@@ -1321,9 +1430,10 @@ struct IdentityPlanPreview: View {
             VStack(alignment: .leading, spacing: MomentumSpacing.tight) {
                 HStack(spacing: 6) {
                     Ph.heart.fill
-                        .font(.system(size: 18))
-                        .foregroundColor(.momentumBlue)
+                        .resizable()
+                        .scaledToFit()
                         .frame(width: 18, height: 18)
+                        .foregroundColor(.momentumBlue)
 
                     Text("Evidence Categories")
                         .font(MomentumFont.headingMedium(17))
@@ -1347,9 +1457,10 @@ struct IdentityPlanPreview: View {
             VStack(alignment: .leading, spacing: MomentumSpacing.tight) {
                 HStack(spacing: 6) {
                     Ph.flagCheckered.fill
-                        .font(.system(size: 18))
-                        .foregroundColor(.momentumBlue)
+                        .resizable()
+                        .scaledToFit()
                         .frame(width: 18, height: 18)
+                        .foregroundColor(.momentumBlue)
 
                     Text("Identity Milestones")
                         .font(MomentumFont.headingMedium(17))
@@ -1359,9 +1470,10 @@ struct IdentityPlanPreview: View {
                 ForEach(Array(plan.milestones.prefix(3).enumerated()), id: \.element.title) { index, milestone in
                     HStack(alignment: .top, spacing: MomentumSpacing.compact) {
                         Ph.checkCircle.regular
-                            .font(.system(size: 16))
-                            .foregroundColor(.momentumTextTertiary)
+                            .resizable()
+                            .scaledToFit()
                             .frame(width: 16, height: 16)
+                            .foregroundColor(.momentumTextTertiary)
 
                         Text(milestone.title)
                             .font(MomentumFont.bodyMedium(15))
