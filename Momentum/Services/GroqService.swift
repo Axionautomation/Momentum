@@ -43,6 +43,7 @@ class GroqService: ObservableObject {
         self.apiKey = Config.groqAPIKey
         self.baseURL = Config.groqAPIBaseURL
         self.model = Config.groqModel
+        self.session = createSession()
     }
 
     // MARK: - Groq API Request/Response Models
@@ -104,39 +105,55 @@ class GroqService: ObservableObject {
 
     // MARK: - Core AI Request Method
 
-    private lazy var session: URLSession = {
-        let config = URLSessionConfiguration.ephemeral
+    private var session: URLSession!
+
+    private func createSession() -> URLSession {
+        let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 60
         config.timeoutIntervalForResource = 120
-        config.waitsForConnectivity = true
+        config.waitsForConnectivity = false  // Fail fast instead of waiting
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
 
-        // Force HTTP/1.1 to avoid QUIC/HTTP3 issues
         config.httpAdditionalHeaders = [
-            "Connection": "close",
-            "Keep-Alive": "timeout=0, max=0"
+            "Connection": "close"
         ]
 
-        // Explicitly disable HTTP/2 and HTTP/3 (QUIC)
-        config.httpShouldUsePipelining = false
         config.httpMaximumConnectionsPerHost = 1
+        config.allowsCellularAccess = true
+        config.allowsExpensiveNetworkAccess = true
+        config.allowsConstrainedNetworkAccess = true
 
         #if os(iOS)
-        // Disable multipath and any protocols that might trigger QUIC
         config.multipathServiceType = .none
         #endif
 
-        // Use URLSessionDelegate to force HTTP/1.1
         let delegate = HTTP1Delegate()
         return URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
-    }()
+    }
 
-    // Delegate to force HTTP/1.1
-    private class HTTP1Delegate: NSObject, URLSessionTaskDelegate {
+    private func resetSession() {
+        session?.invalidateAndCancel()
+        session = createSession()
+        print("🔄 Session reset to force protocol renegotiation")
+    }
+
+    // Delegate to force HTTP/1.1 and block HTTP/3
+    private class HTTP1Delegate: NSObject, URLSessionTaskDelegate, URLSessionDelegate {
         func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
-            // Log protocol used for debugging
             if let transaction = metrics.transactionMetrics.first {
                 let protocolName = transaction.networkProtocolName ?? "unknown"
                 print("🌐 Connection protocol: \(protocolName)")
+
+                // If HTTP/3 was used, warn
+                if protocolName == "h3" {
+                    print("⚠️ WARNING: HTTP/3 (h3) detected despite attempts to disable it")
+                }
+            }
+        }
+
+        func urlSession(_ session: URLSession, didBecomeInvalidWithError error: Error?) {
+            if let error = error {
+                print("❌ URLSession became invalid: \(error)")
             }
         }
     }
@@ -160,6 +177,9 @@ class GroqService: ObservableObject {
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("close", forHTTPHeaderField: "Connection")
+        // Much longer timeout to allow fallback from HTTP/3 to HTTP/1.1
+        request.timeoutInterval = 180
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
 
         let messages = [
             GroqRequest.Message(role: "system", content: systemPrompt),
