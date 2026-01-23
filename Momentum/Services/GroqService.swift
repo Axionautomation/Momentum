@@ -109,14 +109,37 @@ class GroqService: ObservableObject {
         config.timeoutIntervalForRequest = 60
         config.timeoutIntervalForResource = 120
         config.waitsForConnectivity = true
-        // Force HTTP/1.1 to avoid QUIC/HTTP3 issues on some networks
-        config.httpAdditionalHeaders = ["Connection": "close"]
+
+        // Force HTTP/1.1 to avoid QUIC/HTTP3 issues
+        config.httpAdditionalHeaders = [
+            "Connection": "close",
+            "Keep-Alive": "timeout=0, max=0"
+        ]
+
+        // Explicitly disable HTTP/2 and HTTP/3 (QUIC)
+        config.httpShouldUsePipelining = false
+        config.httpMaximumConnectionsPerHost = 1
+
         #if os(iOS)
-        // Disable multipath to improve connection stability
+        // Disable multipath and any protocols that might trigger QUIC
         config.multipathServiceType = .none
         #endif
-        return URLSession(configuration: config)
+
+        // Use URLSessionDelegate to force HTTP/1.1
+        let delegate = HTTP1Delegate()
+        return URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
     }()
+
+    // Delegate to force HTTP/1.1
+    private class HTTP1Delegate: NSObject, URLSessionTaskDelegate {
+        func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+            // Log protocol used for debugging
+            if let transaction = metrics.transactionMetrics.first {
+                let protocolName = transaction.networkProtocolName ?? "unknown"
+                print("🌐 Connection protocol: \(protocolName)")
+            }
+        }
+    }
 
     // MARK: - Core AI Request Method
 
@@ -957,7 +980,7 @@ class GroqService: ObservableObject {
             tools: [GroqRequest.Tool(type: "browser_search")]
         )
 
-        guard let url = URL(string: baseURL) else {
+        guard let url = URL(string: "\(baseURL)/chat/completions") else {
             throw GroqError.invalidURL
         }
 
@@ -965,11 +988,13 @@ class GroqService: ObservableObject {
         urlRequest.httpMethod = "POST"
         urlRequest.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         urlRequest.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.addValue("close", forHTTPHeaderField: "Connection")
 
         let encoder = JSONEncoder()
         urlRequest.httpBody = try encoder.encode(request)
 
-        let (data, response) = try await URLSession.shared.data(for: urlRequest)
+        print("📡 Making browser search request...")
+        let (data, response) = try await session.data(for: urlRequest)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw GroqError.invalidResponse
