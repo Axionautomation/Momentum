@@ -128,7 +128,7 @@ class GroqService: ObservableObject {
     }
 
 
-    private class HTTP1Delegate: NSObject, URLSessionTaskDelegate, URLSessionDelegate {
+    private class HTTP1Delegate: NSObject, URLSessionTaskDelegate, URLSessionDelegate, @unchecked Sendable {
         func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
             if let transaction = metrics.transactionMetrics.first {
                 let protocolName = transaction.networkProtocolName ?? "unknown"

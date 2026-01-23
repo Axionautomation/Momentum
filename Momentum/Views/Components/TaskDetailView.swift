@@ -58,7 +58,7 @@ struct TaskDetailView: View {
                 }
                 .padding(MomentumSpacing.standard)
             }
-            .background(Color.momentumBackgroundPrimary)
+            .background(Color.momentumDarkBackground)
             .navigationTitle(task.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -77,7 +77,7 @@ struct TaskDetailView: View {
                 HoldToCompleteButton(onComplete: onComplete)
                     .padding(.horizontal, MomentumSpacing.standard)
                     .padding(.vertical, MomentumSpacing.compact)
-                    .background(Color.momentumBackgroundPrimary)
+                    .background(Color.momentumDarkBackground)
             }
         }
         .task {
@@ -410,8 +410,8 @@ struct NotesSection: View {
                 }
             }
 
-            if let notes = task.notes, !notes.conversationHistory.isEmpty {
-                Text("\(notes.conversationHistory.count) conversation(s)")
+            if !task.notes.conversationHistory.isEmpty {
+                Text("\(task.notes.conversationHistory.count) conversation(s)")
                     .font(MomentumFont.body(15))
                     .foregroundColor(.momentumTextSecondary)
             } else {
