@@ -109,16 +109,12 @@ class GroqService: ObservableObject {
 
     private func createSession() -> URLSession {
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 60
-        config.timeoutIntervalForResource = 120
-        config.waitsForConnectivity = false  // Fail fast instead of waiting
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 60
+        config.waitsForConnectivity = false
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
 
-        config.httpAdditionalHeaders = [
-            "Connection": "close"
-        ]
-
-        config.httpMaximumConnectionsPerHost = 1
+        config.httpMaximumConnectionsPerHost = 2
         config.allowsCellularAccess = true
         config.allowsExpensiveNetworkAccess = true
         config.allowsConstrainedNetworkAccess = true
@@ -131,22 +127,19 @@ class GroqService: ObservableObject {
         return URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
     }
 
-    private func resetSession() {
-        session?.invalidateAndCancel()
-        session = createSession()
-        print("🔄 Session reset to force protocol renegotiation")
-    }
 
-    // Delegate to force HTTP/1.1 and block HTTP/3
     private class HTTP1Delegate: NSObject, URLSessionTaskDelegate, URLSessionDelegate {
         func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
             if let transaction = metrics.transactionMetrics.first {
                 let protocolName = transaction.networkProtocolName ?? "unknown"
                 print("🌐 Connection protocol: \(protocolName)")
 
-                // If HTTP/3 was used, warn
                 if protocolName == "h3" {
-                    print("⚠️ WARNING: HTTP/3 (h3) detected despite attempts to disable it")
+                    print("⚠️ WARNING: HTTP/3 still detected - may need AsyncHTTPClient fallback")
+                } else if protocolName == "h2" {
+                    print("✅ Using HTTP/2 - optimal performance")
+                } else if protocolName.starts(with: "http/1") {
+                    print("✅ Using HTTP/1.x - connection stable")
                 }
             }
         }
@@ -177,9 +170,10 @@ class GroqService: ObservableObject {
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("close", forHTTPHeaderField: "Connection")
-        // Much longer timeout to allow fallback from HTTP/3 to HTTP/1.1
-        request.timeoutInterval = 180
+        request.timeoutInterval = 30
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        // CRITICAL: Explicitly disable HTTP/3 to avoid QUIC connection errors
+        request.assumesHTTP3Capable = false
 
         let messages = [
             GroqRequest.Message(role: "system", content: systemPrompt),
@@ -246,26 +240,20 @@ class GroqService: ObservableObject {
             return content
             
         } catch {
-            // Check for network errors to retry
             let nsError = error as NSError
             if nsError.domain == NSURLErrorDomain {
-                // Retry for timeouts (-1001), connection lost (-1005), not connected (-1009),
-                // network connection lost (-1009), cannot connect to host (-1004)
                 let retryableCodes = [-1001, -1004, -1005, -1009, -1020]
-                if retryableCodes.contains(nsError.code) && retryCount < 4 {
-                    // For -1005 (connection lost), this is likely HTTP/3 failing
-                    // Reset the session to force protocol renegotiation
+                if retryableCodes.contains(nsError.code) && retryCount < 3 {
+                    // Standard exponential backoff: 2s, 4s, 8s
+                    let delay = Double(pow(2.0, Double(retryCount + 1)))
+                    print("⚠️ Network error (\(nsError.code): \(nsError.localizedDescription)), retrying in \(delay)s...")
+
+                    // -1005 should be extremely rare now
                     if nsError.code == -1005 {
-                        print("⚠️ HTTP/3 connection failed (-1005), resetting session to force fallback...")
-                        resetSession()
-                        // Shorter delay for -1005 since we're forcing a reset
-                        try await Task.sleep(nanoseconds: 1_000_000_000)  // 1 second
-                    } else {
-                        // Exponential backoff for other errors: 3s, 6s, 12s, 24s
-                        let delay = Double(pow(2.0, Double(retryCount + 1))) * 1.5
-                        print("⚠️ Network error (\(nsError.code): \(nsError.localizedDescription)), retrying in \(delay)s...")
-                        try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                        print("⚠️ Unexpected -1005 with HTTP/3 disabled - network instability")
                     }
+
+                    try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
 
                     return try await makeRequest(
                         systemPrompt: systemPrompt,
@@ -1019,6 +1007,8 @@ class GroqService: ObservableObject {
         urlRequest.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         urlRequest.addValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.addValue("close", forHTTPHeaderField: "Connection")
+        // CRITICAL: Explicitly disable HTTP/3 to avoid QUIC connection errors
+        urlRequest.assumesHTTP3Capable = false
 
         let encoder = JSONEncoder()
         urlRequest.httpBody = try encoder.encode(request)
