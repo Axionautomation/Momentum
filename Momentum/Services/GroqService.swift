@@ -748,6 +748,72 @@ class GroqService: ObservableObject {
         }
     }
 
+    // MARK: - Generate Enhanced Task Details
+
+    func generateTaskDetails(
+        task: MomentumTask,
+        context: String
+    ) async throws -> EnhancedTaskDetails {
+        let systemPrompt = """
+        You are Momentum's AI coach. Generate detailed task information to help the user understand and complete this task effectively.
+
+        Provide:
+        1. Difficulty Explanation - Why this task is rated easy/medium/hard
+        2. Time Breakdown - Suggest time allocation for each microstep
+        3. Tips - 2-3 actionable tips specific to this task
+
+        Return ONLY valid JSON in this format:
+        {
+          "difficultyExplanation": "Clear explanation of difficulty rating",
+          "timeBreakdown": [
+            {
+              "microstep": "Step description",
+              "estimatedMinutes": 10,
+              "rationale": "Why this takes ~10 minutes"
+            }
+          ],
+          "tips": ["Tip 1", "Tip 2", "Tip 3"]
+        }
+        """
+
+        let microstepsText = task.microsteps.isEmpty
+            ? "No microsteps yet"
+            : task.microsteps.map { $0.stepText }.joined(separator: "\n")
+
+        let userPrompt = """
+        Task: \(task.title)
+        Description: \(task.taskDescription ?? "No description")
+        Difficulty: \(task.difficulty.displayName)
+        Estimated Time: \(task.estimatedMinutes) minutes
+        Goal Context: \(context)
+
+        Microsteps:
+        \(microstepsText)
+
+        Generate detailed task information to help the user complete this task.
+        """
+
+        let responseText = try await makeRequest(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            temperature: 0.7,
+            maxTokens: 800,
+            requireJSON: true
+        )
+
+        guard let data = responseText.data(using: .utf8) else {
+            throw GroqError.decodingError("Could not convert response to data")
+        }
+
+        do {
+            let decoder = JSONDecoder()
+            let details = try decoder.decode(EnhancedTaskDetails.self, from: data)
+            return details
+        } catch {
+            throw GroqError.decodingError(error.localizedDescription)
+        }
+    }
+
     // MARK: - AI Personality Messages
 
     func getPersonalizedMessage(

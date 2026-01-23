@@ -14,7 +14,6 @@ struct TaskCardView: View {
     let onComplete: () -> Void
     let onExpand: () -> Void
 
-    @State private var isExpanded = false
     @State private var isHolding = false
     @State private var holdProgress: CGFloat = 0
     @State private var holdTimer: Timer?
@@ -23,145 +22,99 @@ struct TaskCardView: View {
     private let holdDuration: Double = 0.8
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Main card content
-            HStack(spacing: MomentumSpacing.compact) {
-                // Difficulty indicator
-                DifficultyIndicator(difficulty: task.difficulty)
+        // Main card content
+        HStack(spacing: MomentumSpacing.compact) {
+            // Task info
+            VStack(alignment: .leading, spacing: MomentumSpacing.micro) {
+                Text(task.title)
+                    .font(MomentumFont.bodyMedium())
+                    .foregroundColor(.momentumTextPrimary)
+                    .lineLimit(2)
 
-                // Task info
-                VStack(alignment: .leading, spacing: MomentumSpacing.micro) {
-                    Text(task.title)
-                        .font(MomentumFont.bodyMedium())
-                        .foregroundColor(.momentumTextPrimary)
-                        .lineLimit(isExpanded ? nil : 2)
-
-                    HStack(spacing: MomentumSpacing.compact) {
-                        // Estimated time
-                        HStack(spacing: 4) {
-                            Ph.clock.regular
-                                .frame(width: 14, height: 14)
-                            Text("\(task.estimatedMinutes) min")
-                        }
-                        .font(MomentumFont.caption())
-                        .foregroundColor(.momentumTextSecondary)
-
-                        // Goal name
-                        HStack(spacing: 4) {
-                            Ph.folder.regular
-                                .frame(width: 14, height: 14)
-                            Text(goalName)
-                                .lineLimit(1)
-                        }
-                        .font(MomentumFont.caption())
-                        .foregroundColor(.momentumTextSecondary)
+                HStack(spacing: MomentumSpacing.compact) {
+                    // Estimated time
+                    HStack(spacing: 4) {
+                        Ph.clock.regular
+                            .frame(width: 14, height: 14)
+                        Text("\(task.estimatedMinutes) min")
                     }
-                }
+                    .font(MomentumFont.caption())
+                    .foregroundColor(.momentumTextSecondary)
 
-                Spacer()
-
-                // Hold progress indicator
-                if isHolding {
-                    ZStack {
-                        Circle()
-                            .stroke(Color.momentumBlue.opacity(0.2), lineWidth: 3)
-                            .frame(width: 32, height: 32)
-
-                        Circle()
-                            .trim(from: 0, to: holdProgress)
-                            .stroke(Color.momentumBlue, style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                            .frame(width: 32, height: 32)
-                            .rotationEffect(.degrees(-90))
+                    // Goal name
+                    HStack(spacing: 4) {
+                        Ph.folder.regular
+                            .frame(width: 14, height: 14)
+                        Text(goalName)
+                            .lineLimit(1)
                     }
-                } else {
-                    // Chevron for expansion
-                    Ph.caretDown.regular
-                        .frame(width: 20, height: 20)
-                        .foregroundColor(.momentumTextTertiary)
-                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                    .font(MomentumFont.caption())
+                    .foregroundColor(.momentumTextSecondary)
                 }
             }
-            .padding(MomentumSpacing.standard)
 
-            // Expanded content
-            if isExpanded {
-                ExpandedTaskContent(task: task)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+            Spacer()
+
+            // Hold progress indicator
+            if isHolding {
+                ZStack {
+                    Circle()
+                        .stroke(Color.white.opacity(0.3), lineWidth: 3)
+                        .frame(width: 32, height: 32)
+
+                    Circle()
+                        .trim(from: 0, to: holdProgress)
+                        .stroke(Color.white, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                        .frame(width: 32, height: 32)
+                        .rotationEffect(.degrees(-90))
+                }
             }
         }
-        .background(Color.momentumCardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: MomentumRadius.medium))
+        .padding(MomentumSpacing.standard)
+        .background(
+            LinearGradient(
+                colors: [Color(hex: "#FFD699"), Color(hex: "#FFB84D")],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 36))
         .overlay(
-            // Hold fill animation - blue fills from edges to center
+            // Hold fill animation - rounded square expands from center
             GeometryReader { geometry in
-                ZStack {
-                    // Top edge
-                    Rectangle()
-                        .fill(Color.momentumBlue.opacity(0.15))
-                        .frame(height: geometry.size.height * holdProgress * 0.5)
-                        .frame(maxHeight: .infinity, alignment: .top)
-
-                    // Bottom edge
-                    Rectangle()
-                        .fill(Color.momentumBlue.opacity(0.15))
-                        .frame(height: geometry.size.height * holdProgress * 0.5)
-                        .frame(maxHeight: .infinity, alignment: .bottom)
-
-                    // Left edge
-                    Rectangle()
-                        .fill(Color.momentumBlue.opacity(0.15))
-                        .frame(width: geometry.size.width * holdProgress * 0.5)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                    // Right edge
-                    Rectangle()
-                        .fill(Color.momentumBlue.opacity(0.15))
-                        .frame(width: geometry.size.width * holdProgress * 0.5)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                }
+                RoundedRectangle(cornerRadius: 24)
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.3), Color.white.opacity(0.2)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .scaleEffect(holdProgress)
+                    .opacity(holdProgress * 0.8)
+                    .frame(width: geometry.size.width * 0.9, height: geometry.size.height * 0.9)
+                    .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
             }
-            .clipShape(RoundedRectangle(cornerRadius: MomentumRadius.medium))
+            .clipShape(RoundedRectangle(cornerRadius: 36))
             .allowsHitTesting(false)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: MomentumRadius.medium)
-                .strokeBorder(
-                    difficultyBorderColor,
-                    lineWidth: 3
-                )
-                .opacity(0.3)
-        )
-        .overlay(
-            // Left accent bar
-            HStack {
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(difficultyColor)
-                    .frame(width: 4)
-                    .padding(.vertical, 8)
-                Spacer()
-            }
-            .padding(.leading, 4)
-        )
-        .overlay(
             // Completion glow
-            RoundedRectangle(cornerRadius: MomentumRadius.medium)
-                .stroke(Color.momentumBlue, lineWidth: 4)
+            RoundedRectangle(cornerRadius: 36)
+                .stroke(Color.white, lineWidth: 4)
                 .opacity(showCompletionGlow ? 0.8 : 0)
                 .blur(radius: showCompletionGlow ? 4 : 0)
         )
         .shadow(
-            color: Color.black.opacity(0.06),
+            color: Color.black.opacity(0.1),
             radius: 12,
             x: 0,
             y: 4
         )
         .scaleEffect(isHolding ? 0.97 : 1.0)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHolding)
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isExpanded)
         .onTapGesture {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                isExpanded.toggle()
-            }
+            onExpand()
             SoundManager.shared.selectionHaptic()
         }
         .onLongPressGesture(minimumDuration: holdDuration, maximumDistance: 50) {
@@ -173,24 +126,6 @@ struct TaskCardView: View {
             } else {
                 cancelHold()
             }
-        }
-    }
-
-    // MARK: - Difficulty Styling
-
-    private var difficultyColor: Color {
-        switch task.difficulty {
-        case .easy: return .momentumEasy
-        case .medium: return .momentumMedium
-        case .hard: return .momentumHard
-        }
-    }
-
-    private var difficultyBorderColor: Color {
-        switch task.difficulty {
-        case .easy: return .momentumEasy
-        case .medium: return .momentumMedium
-        case .hard: return .momentumHard
         }
     }
 
@@ -230,135 +165,6 @@ struct TaskCardView: View {
         // Brief delay then trigger completion
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             onComplete()
-        }
-    }
-}
-
-// MARK: - Difficulty Indicator
-
-struct DifficultyIndicator: View {
-    let difficulty: TaskDifficulty
-
-    private var dotCount: Int {
-        switch difficulty {
-        case .easy: return 1
-        case .medium: return 2
-        case .hard: return 3
-        }
-    }
-
-    private var color: Color {
-        switch difficulty {
-        case .easy: return .momentumEasy
-        case .medium: return .momentumMedium
-        case .hard: return .momentumHard
-        }
-    }
-
-    var body: some View {
-        HStack(spacing: 3) {
-            ForEach(0..<dotCount, id: \.self) { _ in
-                Circle()
-                    .fill(color)
-                    .frame(width: 8, height: 8)
-            }
-        }
-        .frame(width: 32, alignment: .leading)
-    }
-}
-
-// MARK: - Expanded Content
-
-struct ExpandedTaskContent: View {
-    let task: MomentumTask
-    @EnvironmentObject var appState: AppState
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: MomentumSpacing.standard) {
-            Divider()
-                .background(Color.momentumCardBorder)
-
-            // Description
-            if let description = task.taskDescription, !description.isEmpty {
-                Text(description)
-                    .font(MomentumFont.body(15))
-                    .foregroundColor(.momentumTextSecondary)
-                    .padding(.horizontal, MomentumSpacing.standard)
-            }
-
-            // Microsteps
-            if !task.microsteps.isEmpty {
-                VStack(alignment: .leading, spacing: MomentumSpacing.tight) {
-                    Text("Microsteps")
-                        .font(MomentumFont.label())
-                        .foregroundColor(.momentumTextSecondary)
-
-                    ForEach(task.microsteps.sorted(by: { $0.orderIndex < $1.orderIndex })) { step in
-                        MicrostepRow(step: step)
-                    }
-                }
-                .padding(.horizontal, MomentumSpacing.standard)
-            }
-
-            // Action buttons
-            HStack(spacing: MomentumSpacing.compact) {
-                // Notes button
-                Button {
-                    appState.openGlobalChat(withTask: task)
-                } label: {
-                    HStack(spacing: 6) {
-                        Ph.notepad.regular
-                            .frame(width: 18, height: 18)
-                        Text("Notes")
-                    }
-                    .font(MomentumFont.label())
-                    .foregroundColor(.momentumBlue)
-                    .padding(.horizontal, MomentumSpacing.compact)
-                    .padding(.vertical, MomentumSpacing.tight)
-                    .background(Color.momentumBlue.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: MomentumRadius.small))
-                }
-
-                // AI Help button
-                Button {
-                    appState.openGlobalChat(withTask: task)
-                } label: {
-                    HStack(spacing: 6) {
-                        Ph.sparkle.regular
-                            .frame(width: 18, height: 18)
-                        Text("AI Help")
-                    }
-                    .font(MomentumFont.label())
-                    .foregroundColor(.momentumBlue)
-                    .padding(.horizontal, MomentumSpacing.compact)
-                    .padding(.vertical, MomentumSpacing.tight)
-                    .background(Color.momentumBlue.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: MomentumRadius.small))
-                }
-
-                Spacer()
-            }
-            .padding(.horizontal, MomentumSpacing.standard)
-            .padding(.bottom, MomentumSpacing.standard)
-        }
-    }
-}
-
-// MARK: - Microstep Row
-
-struct MicrostepRow: View {
-    let step: Microstep
-
-    var body: some View {
-        HStack(spacing: MomentumSpacing.tight) {
-            Image(systemName: step.isCompleted ? "checkmark.circle.fill" : "circle")
-                .foregroundColor(step.isCompleted ? .momentumSuccess : .momentumTextTertiary)
-                .frame(width: 20, height: 20)
-
-            Text(step.stepText)
-                .font(MomentumFont.body(15))
-                .foregroundColor(step.isCompleted ? .momentumTextTertiary : .momentumTextPrimary)
-                .strikethrough(step.isCompleted)
         }
     }
 }

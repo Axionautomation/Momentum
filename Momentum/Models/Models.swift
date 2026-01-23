@@ -409,6 +409,20 @@ struct MomentumTask: Identifiable, Codable {
     }
 }
 
+// MARK: - Enhanced Task Details
+
+struct EnhancedTaskDetails: Codable {
+    let difficultyExplanation: String
+    let timeBreakdown: [MicrostepTimeEstimate]
+    let tips: [String]
+}
+
+struct MicrostepTimeEstimate: Codable {
+    let microstep: String
+    let estimatedMinutes: Int
+    let rationale: String
+}
+
 enum TaskDifficulty: String, Codable {
     case easy
     case medium

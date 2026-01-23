@@ -251,6 +251,7 @@ struct MilestoneOverviewCard: View {
 
 struct TasksSection: View {
     @EnvironmentObject var appState: AppState
+    @State private var selectedTask: MomentumTask?
 
     var body: some View {
         VStack(alignment: .leading, spacing: MomentumSpacing.standard) {
@@ -261,15 +262,30 @@ struct TasksSection: View {
                         .font(MomentumFont.headingMedium(20))
                         .foregroundColor(.momentumTextPrimary)
 
-                    ForEach(appState.todaysTasks) { task in
-                        TaskCardView(
-                            task: task,
+                    ZStack {
+                        SwipeableTaskStack(
+                            tasks: appState.todaysTasks,
                             goalName: appState.activeProjectGoal?.visionRefined ?? "Project Goal",
-                            onComplete: {
+                            onTaskComplete: { task in
                                 appState.completeTask(task)
                             },
-                            onExpand: {}
+                            onTaskTapped: { task in
+                                selectedTask = task
+                            }
                         )
+
+                        // Difficulty badge overlay
+                        if let currentTask = appState.todaysTasks.first {
+                            VStack {
+                                HStack {
+                                    Spacer()
+                                    DifficultyBadge(difficulty: currentTask.difficulty)
+                                        .padding(.trailing, MomentumSpacing.standard)
+                                        .padding(.top, MomentumSpacing.compact)
+                                }
+                                Spacer()
+                            }
+                        }
                     }
                 }
             }
@@ -310,6 +326,19 @@ struct TasksSection: View {
             if appState.todaysTasks.isEmpty && appState.todaysHabits.isEmpty && appState.todaysIdentityTask == nil {
                 EmptyStateView()
             }
+        }
+        .sheet(item: $selectedTask) { task in
+            TaskDetailView(
+                task: task,
+                goalName: appState.activeProjectGoal?.visionRefined ?? "Project Goal",
+                onComplete: {
+                    appState.completeTask(task)
+                    selectedTask = nil
+                },
+                onDismiss: {
+                    selectedTask = nil
+                }
+            )
         }
     }
 }
