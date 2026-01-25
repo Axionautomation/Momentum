@@ -12,29 +12,31 @@ struct TodayView: View {
     @EnvironmentObject var appState: AppState
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: MomentumSpacing.section) {
-                // Header: Date and Greeting
-                HeaderSection()
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(spacing: MomentumSpacing.section) {
+                    // Header: Date and Greeting
+                    HeaderSection()
 
-                // Streak and Progress
-                StatsSection()
+                    // Streak and Progress
+                    StatsSection()
 
-                // Weekly Milestone Overview
-                if let milestone = currentMilestone {
-                    MilestoneOverviewCard(milestone: milestone)
+                    // Weekly Milestone Overview
+                    if let milestone = currentMilestone {
+                        MilestoneOverviewCard(milestone: milestone)
+                    }
+
+                    // Today's Tasks
+                    TasksSection(availableHeight: geometry.size.height)
                 }
-
-                // Today's Tasks
-                TasksSection()
+                .padding(.horizontal, MomentumSpacing.standard)
+                .padding(.vertical, MomentumSpacing.section)
             }
-            .padding(.horizontal, MomentumSpacing.standard)
-            .padding(.vertical, MomentumSpacing.section)
-        }
-        .background(Color.momentumBackgroundSecondary)
-        .onAppear {
-            // Ensure today's content is loaded
-            appState.loadTodaysContent()
+            .background(Color.momentumBackgroundSecondary)
+            .onAppear {
+                // Ensure today's content is loaded
+                appState.loadTodaysContent()
+            }
         }
     }
 
@@ -252,6 +254,7 @@ struct MilestoneOverviewCard: View {
 struct TasksSection: View {
     @EnvironmentObject var appState: AppState
     @State private var selectedTask: MomentumTask?
+    let availableHeight: CGFloat
 
     var body: some View {
         VStack(alignment: .leading, spacing: MomentumSpacing.standard) {
@@ -272,7 +275,7 @@ struct TasksSection: View {
                             selectedTask = task
                         }
                     )
-                    .frame(height: UIScreen.main.bounds.height * 0.5)
+                    .frame(height: availableHeight * 0.5)
                 }
             }
 

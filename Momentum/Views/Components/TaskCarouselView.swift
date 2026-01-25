@@ -353,15 +353,17 @@ struct CarouselTaskCard: View {
         )
     ]
 
-    VStack {
-        TaskCarouselView(
-            tasks: sampleTasks,
-            goalName: "Launch SaaS Product",
-            onTaskComplete: { _ in },
-            onTaskTapped: { _ in }
-        )
-        .frame(height: UIScreen.main.bounds.height * 0.5)
+    GeometryReader { geometry in
+        VStack {
+            TaskCarouselView(
+                tasks: sampleTasks,
+                goalName: "Launch SaaS Product",
+                onTaskComplete: { _ in },
+                onTaskTapped: { _ in }
+            )
+            .frame(height: geometry.size.height * 0.5)
+        }
+        .padding()
+        .background(Color.momentumBackgroundSecondary)
     }
-    .padding()
-    .background(Color.momentumBackgroundSecondary)
 }
