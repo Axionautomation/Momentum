@@ -4,9 +4,6 @@
 //
 //  Created by Henry Bowman on 12/29/25.
 //
-//  Uses AsyncHTTPClient (SwiftNIO) to avoid HTTP/3 (QUIC) connection errors.
-//  SwiftNIO only supports HTTP/1.1 and HTTP/2 - guaranteed stable connections.
-//
 
 import Foundation
 import Combine
@@ -41,11 +38,49 @@ class GroqService: ObservableObject {
     private let apiKey: String
     private let baseURL: String
     private let model: String
+    private var session: URLSession!
 
     private init() {
         self.apiKey = Config.groqAPIKey
         self.baseURL = Config.groqAPIBaseURL
         self.model = Config.groqModel
+        self.session = createSession()
+    }
+
+    private func createSession() -> URLSession {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 60
+        config.waitsForConnectivity = false
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.httpMaximumConnectionsPerHost = 2
+        config.allowsCellularAccess = true
+        config.allowsExpensiveNetworkAccess = true
+        config.allowsConstrainedNetworkAccess = true
+
+        #if os(iOS)
+        config.multipathServiceType = .none
+        #endif
+
+        let delegate = NetworkDebugDelegate()
+        return URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
+    }
+
+    /// Delegate for debugging network protocol and connection info
+    private class NetworkDebugDelegate: NSObject, URLSessionTaskDelegate, URLSessionDelegate, @unchecked Sendable {
+        func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+            if let transaction = metrics.transactionMetrics.first {
+                let protocolName = transaction.networkProtocolName ?? "unknown"
+                let duration = String(format: "%.2f", transaction.fetchEndDate?.timeIntervalSince(transaction.fetchStartDate ?? Date()) ?? 0)
+                print("🌐 Protocol: \(protocolName) | Duration: \(duration)s")
+            }
+        }
+
+        func urlSession(_ session: URLSession, didBecomeInvalidWithError error: Error?) {
+            if let error = error {
+                print("❌ URLSession invalidated: \(error.localizedDescription)")
+            }
+        }
     }
 
     // MARK: - Groq API Request/Response Models
@@ -105,7 +140,7 @@ class GroqService: ObservableObject {
         }
     }
 
-    // MARK: - Core AI Request Method (via AsyncHTTPClient)
+    // MARK: - Core AI Request Method
 
     private func makeRequest(
         systemPrompt: String,
@@ -115,7 +150,16 @@ class GroqService: ObservableObject {
         requireJSON: Bool = false,
         retryCount: Int = 0
     ) async throws -> String {
-        let url = "\(baseURL)/chat/completions"
+        guard let url = URL(string: "\(baseURL)/chat/completions") else {
+            throw GroqError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 30
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
 
         let messages = [
             GroqRequest.Message(role: "system", content: systemPrompt),
@@ -128,34 +172,31 @@ class GroqService: ObservableObject {
             temperature: temperature,
             maxTokens: maxTokens,
             responseFormat: requireJSON ? GroqRequest.ResponseFormat(type: "json_object") : nil,
-            tools: nil  // No tools for standard requests
+            tools: nil
         )
 
         let encoder = JSONEncoder()
-        let body = try encoder.encode(groqRequest)
-
-        let headers: [(String, String)] = [
-            ("Authorization", "Bearer \(apiKey)"),
-            ("Content-Type", "application/json")
-        ]
+        request.httpBody = try encoder.encode(groqRequest)
 
         print("📡 Making Groq API request (Attempt \(retryCount + 1))...")
 
         do {
-            let (data, statusCode) = try await HTTPClientService.shared.post(
-                url: url,
-                headers: headers,
-                body: body
-            )
+            let (data, response) = try await session.data(for: request)
 
-            print("📊 HTTP Status: \(statusCode)")
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("❌ Invalid HTTP response")
+                throw GroqError.invalidResponse
+            }
 
-            guard statusCode == 200 else {
-                // If 5xx error or 429, maybe retry
-                if (500...599).contains(statusCode) || statusCode == 429 {
+            print("📊 HTTP Status: \(httpResponse.statusCode)")
+
+            guard httpResponse.statusCode == 200 else {
+                // Retry on server errors or rate limiting
+                if (500...599).contains(httpResponse.statusCode) || httpResponse.statusCode == 429 {
                     if retryCount < 3 {
-                        print("⚠️ Server error, retrying in \(Double(retryCount + 1) * 2)s...")
-                        try await Task.sleep(nanoseconds: UInt64(Double(retryCount + 1) * 2 * 1_000_000_000))
+                        let delay = Double(retryCount + 1) * 2
+                        print("⚠️ Server error \(httpResponse.statusCode), retrying in \(delay)s...")
+                        try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                         return try await makeRequest(
                             systemPrompt: systemPrompt,
                             userPrompt: userPrompt,
@@ -169,9 +210,9 @@ class GroqService: ObservableObject {
 
                 if let errorString = String(data: data, encoding: .utf8) {
                     print("❌ API Error: \(errorString)")
-                    throw GroqError.apiError("Status \(statusCode): \(errorString)")
+                    throw GroqError.apiError("Status \(httpResponse.statusCode): \(errorString)")
                 }
-                throw GroqError.apiError("Status code: \(statusCode)")
+                throw GroqError.apiError("Status code: \(httpResponse.statusCode)")
             }
 
             let decoder = JSONDecoder()
@@ -188,10 +229,12 @@ class GroqService: ObservableObject {
         } catch let error as GroqError {
             throw error
         } catch {
-            // Handle connection errors with retry
-            if retryCount < 3 {
-                let delay = Double(pow(2.0, Double(retryCount + 1)))
-                print("⚠️ Connection error, retrying in \(delay)s: \(error.localizedDescription)")
+            let nsError = error as NSError
+            // Retry on common network errors
+            let retryableCodes = [-1001, -1004, -1005, -1009, -1020]
+            if nsError.domain == NSURLErrorDomain && retryableCodes.contains(nsError.code) && retryCount < 3 {
+                let delay = pow(2.0, Double(retryCount + 1))
+                print("⚠️ Network error (\(nsError.code)), retrying in \(delay)s...")
                 try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                 return try await makeRequest(
                     systemPrompt: systemPrompt,
@@ -989,7 +1032,7 @@ class GroqService: ObservableObject {
         """
 
         // Use gpt-oss-120b model with browser_search tool
-        let request = GroqRequest(
+        let groqRequest = GroqRequest(
             model: "openai/gpt-oss-120b",
             messages: [
                 GroqRequest.Message(role: "system", content: systemPrompt),
@@ -1001,27 +1044,34 @@ class GroqService: ObservableObject {
             tools: [GroqRequest.Tool(type: "browser_search")]
         )
 
-        let url = "\(baseURL)/chat/completions"
+        guard let url = URL(string: "\(baseURL)/chat/completions") else {
+            throw GroqError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 60
+
         let encoder = JSONEncoder()
-        let body = try encoder.encode(request)
+        request.httpBody = try encoder.encode(groqRequest)
 
-        let headers: [(String, String)] = [
-            ("Authorization", "Bearer \(apiKey)"),
-            ("Content-Type", "application/json")
-        ]
+        print("📡 Making browser search request...")
+        let (data, response) = try await session.data(for: request)
 
-        print("📡 Making browser search request via HTTP/2...")
-        let (data, statusCode) = try await HTTPClientService.shared.post(
-            url: url,
-            headers: headers,
-            body: body
-        )
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw GroqError.invalidResponse
+        }
 
-        if statusCode != 200 {
+        print("📊 Browser search HTTP Status: \(httpResponse.statusCode)")
+
+        if httpResponse.statusCode != 200 {
             if let errorMessage = String(data: data, encoding: .utf8) {
-                throw GroqError.apiError("HTTP \(statusCode): \(errorMessage)")
+                print("❌ Browser search error: \(errorMessage)")
+                throw GroqError.apiError("HTTP \(httpResponse.statusCode): \(errorMessage)")
             } else {
-                throw GroqError.apiError("HTTP \(statusCode)")
+                throw GroqError.apiError("HTTP \(httpResponse.statusCode)")
             }
         }
 
@@ -1032,6 +1082,7 @@ class GroqService: ObservableObject {
             throw GroqError.invalidResponse
         }
 
+        print("✅ Browser search completed")
         return firstChoice.message.content
     }
 

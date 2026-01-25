@@ -30,14 +30,6 @@ Ph.caretLeft.regular     // Navigation icons
 Ph.target.regular        // Goal icons
 ```
 
-### AsyncHTTPClient (Networking)
-- **Source**: https://github.com/swift-server/async-http-client
-- **Version**: 1.21.0+
-- **Purpose**: HTTP/1.1 and HTTP/2 client (eliminates HTTP/3/QUIC connection errors)
-- **Import**: `import AsyncHTTPClient`
-- **Why**: Apple's URLSession can still use HTTP/3 even with `assumesHTTP3Capable = false`. SwiftNIO has no HTTP/3 implementation, guaranteeing stable connections.
-- **Usage**: All API calls go through `HTTPClientService.shared.post()`
-
 ## Project Structure
 
 ```
@@ -67,7 +59,6 @@ Momentum/
 │       └── TaskPickerView.swift      # Task selection modal
 ├── Services/
 │   ├── GroqService.swift             # AI integration
-│   ├── HTTPClientService.swift       # HTTP/2 networking (no QUIC)
 │   ├── ConversationOrchestrator.swift # Multi-turn conversations
 │   └── MockDataService.swift         # Demo data
 ├── Utilities/
@@ -83,7 +74,6 @@ Momentum/
 | `Models.swift` | All data models: MomentumUser, Goal, PowerGoal, WeeklyMilestone, MomentumTask, TaskNotes |
 | `AppState.swift` | @MainActor state container, persistence, task management |
 | `GroqService.swift` | AI API calls: onboarding questions, plan generation, task help, research |
-| `HTTPClientService.swift` | Actor-based HTTP client using SwiftNIO (HTTP/1.1 + HTTP/2 only, no QUIC) |
 | `Config.swift` | API keys, base URLs, app version |
 | `Theme.swift` | Colors, typography, gradients, view modifiers |
 
