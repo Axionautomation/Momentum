@@ -262,31 +262,17 @@ struct TasksSection: View {
                         .font(MomentumFont.headingMedium(20))
                         .foregroundColor(.momentumTextPrimary)
 
-                    ZStack {
-                        SwipeableTaskStack(
-                            tasks: appState.todaysTasks,
-                            goalName: appState.activeProjectGoal?.visionRefined ?? "Project Goal",
-                            onTaskComplete: { task in
-                                appState.completeTask(task)
-                            },
-                            onTaskTapped: { task in
-                                selectedTask = task
-                            }
-                        )
-
-                        // Difficulty badge overlay
-                        if let currentTask = appState.todaysTasks.first {
-                            VStack {
-                                HStack {
-                                    Spacer()
-                                    DifficultyCornerBadge(difficulty: currentTask.difficulty)
-                                        .padding(.trailing, MomentumSpacing.standard)
-                                        .padding(.top, MomentumSpacing.compact)
-                                }
-                                Spacer()
-                            }
+                    TaskCarouselView(
+                        tasks: appState.todaysTasks,
+                        goalName: appState.activeProjectGoal?.visionRefined ?? "Project Goal",
+                        onTaskComplete: { task in
+                            appState.completeTask(task)
+                        },
+                        onTaskTapped: { task in
+                            selectedTask = task
                         }
-                    }
+                    )
+                    .frame(height: UIScreen.main.bounds.height * 0.5)
                 }
             }
 
