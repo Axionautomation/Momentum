@@ -4,6 +4,9 @@
 //
 //  Created by Henry Bowman on 12/29/25.
 //
+//  Uses AsyncHTTPClient (SwiftNIO) to avoid HTTP/3 (QUIC) connection errors.
+//  SwiftNIO only supports HTTP/1.1 and HTTP/2 - guaranteed stable connections.
+//
 
 import Foundation
 import Combine
@@ -43,7 +46,6 @@ class GroqService: ObservableObject {
         self.apiKey = Config.groqAPIKey
         self.baseURL = Config.groqAPIBaseURL
         self.model = Config.groqModel
-        self.session = createSession()
     }
 
     // MARK: - Groq API Request/Response Models
@@ -103,55 +105,7 @@ class GroqService: ObservableObject {
         }
     }
 
-    // MARK: - Core AI Request Method
-
-    private var session: URLSession!
-
-    private func createSession() -> URLSession {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 30
-        config.timeoutIntervalForResource = 60
-        config.waitsForConnectivity = false
-        config.requestCachePolicy = .reloadIgnoringLocalCacheData
-
-        config.httpMaximumConnectionsPerHost = 2
-        config.allowsCellularAccess = true
-        config.allowsExpensiveNetworkAccess = true
-        config.allowsConstrainedNetworkAccess = true
-
-        #if os(iOS)
-        config.multipathServiceType = .none
-        #endif
-
-        let delegate = HTTP1Delegate()
-        return URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
-    }
-
-
-    private class HTTP1Delegate: NSObject, URLSessionTaskDelegate, URLSessionDelegate, @unchecked Sendable {
-        func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
-            if let transaction = metrics.transactionMetrics.first {
-                let protocolName = transaction.networkProtocolName ?? "unknown"
-                print("🌐 Connection protocol: \(protocolName)")
-
-                if protocolName == "h3" {
-                    print("⚠️ WARNING: HTTP/3 still detected - may need AsyncHTTPClient fallback")
-                } else if protocolName == "h2" {
-                    print("✅ Using HTTP/2 - optimal performance")
-                } else if protocolName.starts(with: "http/1") {
-                    print("✅ Using HTTP/1.x - connection stable")
-                }
-            }
-        }
-
-        func urlSession(_ session: URLSession, didBecomeInvalidWithError error: Error?) {
-            if let error = error {
-                print("❌ URLSession became invalid: \(error)")
-            }
-        }
-    }
-
-    // MARK: - Core AI Request Method
+    // MARK: - Core AI Request Method (via AsyncHTTPClient)
 
     private func makeRequest(
         systemPrompt: String,
@@ -161,19 +115,7 @@ class GroqService: ObservableObject {
         requireJSON: Bool = false,
         retryCount: Int = 0
     ) async throws -> String {
-        guard let url = URL(string: "\(baseURL)/chat/completions") else {
-            throw GroqError.invalidURL
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("close", forHTTPHeaderField: "Connection")
-        request.timeoutInterval = 30
-        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        // CRITICAL: Explicitly disable HTTP/3 to avoid QUIC connection errors
-        request.assumesHTTP3Capable = false
+        let url = "\(baseURL)/chat/completions"
 
         let messages = [
             GroqRequest.Message(role: "system", content: systemPrompt),
@@ -190,23 +132,27 @@ class GroqService: ObservableObject {
         )
 
         let encoder = JSONEncoder()
-        request.httpBody = try encoder.encode(groqRequest)
+        let body = try encoder.encode(groqRequest)
+
+        let headers: [(String, String)] = [
+            ("Authorization", "Bearer \(apiKey)"),
+            ("Content-Type", "application/json")
+        ]
 
         print("📡 Making Groq API request (Attempt \(retryCount + 1))...")
-        
+
         do {
-            let (data, response) = try await session.data(for: request)
+            let (data, statusCode) = try await HTTPClientService.shared.post(
+                url: url,
+                headers: headers,
+                body: body
+            )
 
-            guard let httpResponse = response as? HTTPURLResponse else {
-                print("❌ Invalid HTTP response")
-                throw GroqError.invalidResponse
-            }
+            print("📊 HTTP Status: \(statusCode)")
 
-            print("📊 HTTP Status: \(httpResponse.statusCode)")
-
-            guard httpResponse.statusCode == 200 else {
+            guard statusCode == 200 else {
                 // If 5xx error or 429, maybe retry
-                if (500...599).contains(httpResponse.statusCode) || httpResponse.statusCode == 429 {
+                if (500...599).contains(statusCode) || statusCode == 429 {
                     if retryCount < 3 {
                         print("⚠️ Server error, retrying in \(Double(retryCount + 1) * 2)s...")
                         try await Task.sleep(nanoseconds: UInt64(Double(retryCount + 1) * 2 * 1_000_000_000))
@@ -220,12 +166,12 @@ class GroqService: ObservableObject {
                         )
                     }
                 }
-                
+
                 if let errorString = String(data: data, encoding: .utf8) {
                     print("❌ API Error: \(errorString)")
-                    throw GroqError.apiError("Status \(httpResponse.statusCode): \(errorString)")
+                    throw GroqError.apiError("Status \(statusCode): \(errorString)")
                 }
-                throw GroqError.apiError("Status code: \(httpResponse.statusCode)")
+                throw GroqError.apiError("Status code: \(statusCode)")
             }
 
             let decoder = JSONDecoder()
@@ -238,32 +184,23 @@ class GroqService: ObservableObject {
 
             print("✅ Received response (\(content.count) characters)")
             return content
-            
+
+        } catch let error as GroqError {
+            throw error
         } catch {
-            let nsError = error as NSError
-            if nsError.domain == NSURLErrorDomain {
-                let retryableCodes = [-1001, -1004, -1005, -1009, -1020]
-                if retryableCodes.contains(nsError.code) && retryCount < 3 {
-                    // Standard exponential backoff: 2s, 4s, 8s
-                    let delay = Double(pow(2.0, Double(retryCount + 1)))
-                    print("⚠️ Network error (\(nsError.code): \(nsError.localizedDescription)), retrying in \(delay)s...")
-
-                    // -1005 should be extremely rare now
-                    if nsError.code == -1005 {
-                        print("⚠️ Unexpected -1005 with HTTP/3 disabled - network instability")
-                    }
-
-                    try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-
-                    return try await makeRequest(
-                        systemPrompt: systemPrompt,
-                        userPrompt: userPrompt,
-                        temperature: temperature,
-                        maxTokens: maxTokens,
-                        requireJSON: requireJSON,
-                        retryCount: retryCount + 1
-                    )
-                }
+            // Handle connection errors with retry
+            if retryCount < 3 {
+                let delay = Double(pow(2.0, Double(retryCount + 1)))
+                print("⚠️ Connection error, retrying in \(delay)s: \(error.localizedDescription)")
+                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                return try await makeRequest(
+                    systemPrompt: systemPrompt,
+                    userPrompt: userPrompt,
+                    temperature: temperature,
+                    maxTokens: maxTokens,
+                    requireJSON: requireJSON,
+                    retryCount: retryCount + 1
+                )
             }
             print("❌ Request failed: \(error.localizedDescription)")
             throw GroqError.networkError(error)
@@ -1064,33 +1001,27 @@ class GroqService: ObservableObject {
             tools: [GroqRequest.Tool(type: "browser_search")]
         )
 
-        guard let url = URL(string: "\(baseURL)/chat/completions") else {
-            throw GroqError.invalidURL
-        }
-
-        var urlRequest = URLRequest(url: url)
-        urlRequest.httpMethod = "POST"
-        urlRequest.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        urlRequest.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.addValue("close", forHTTPHeaderField: "Connection")
-        // CRITICAL: Explicitly disable HTTP/3 to avoid QUIC connection errors
-        urlRequest.assumesHTTP3Capable = false
-
+        let url = "\(baseURL)/chat/completions"
         let encoder = JSONEncoder()
-        urlRequest.httpBody = try encoder.encode(request)
+        let body = try encoder.encode(request)
 
-        print("📡 Making browser search request...")
-        let (data, response) = try await session.data(for: urlRequest)
+        let headers: [(String, String)] = [
+            ("Authorization", "Bearer \(apiKey)"),
+            ("Content-Type", "application/json")
+        ]
 
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw GroqError.invalidResponse
-        }
+        print("📡 Making browser search request via HTTP/2...")
+        let (data, statusCode) = try await HTTPClientService.shared.post(
+            url: url,
+            headers: headers,
+            body: body
+        )
 
-        if httpResponse.statusCode != 200 {
+        if statusCode != 200 {
             if let errorMessage = String(data: data, encoding: .utf8) {
-                throw GroqError.apiError("HTTP \(httpResponse.statusCode): \(errorMessage)")
+                throw GroqError.apiError("HTTP \(statusCode): \(errorMessage)")
             } else {
-                throw GroqError.apiError("HTTP \(httpResponse.statusCode)")
+                throw GroqError.apiError("HTTP \(statusCode)")
             }
         }
 
