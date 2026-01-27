@@ -51,58 +51,45 @@ struct HomeView: View {
                 )
                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
             } else {
-                ScrollView {
-                    VStack(spacing: MomentumSpacing.section) {
-                        // Header
-                        HeaderView(
-                            weeklyPoints: weeklyPoints,
-                            weeklyMax: 42
-                        )
-                        .padding(.horizontal, MomentumSpacing.comfortable)
-                        .padding(.top, MomentumSpacing.standard)
+                VStack(spacing: MomentumSpacing.section) {
+                    // Header
+                    HeaderView(
+                        weeklyPoints: weeklyPoints,
+                        weeklyMax: 42
+                    )
+                    .padding(.horizontal, MomentumSpacing.comfortable)
+                    .padding(.top, MomentumSpacing.standard)
+                    
+                    Spacer()
 
-                        // Task cards
-                        if pendingTasks.isEmpty && appState.todaysTasks.isEmpty {
-                            EmptyTasksView()
-                                .padding(.top, MomentumSpacing.large)
-                        } else if pendingTasks.isEmpty {
-                            // All completed - show briefly before celebration
-                            VStack(spacing: MomentumSpacing.standard) {
-                                Ph.checkCircle.fill
-                                    .frame(width: 48, height: 48)
-                                    .foregroundColor(.momentumSuccess)
+                    // Task cards carousel
+                    if pendingTasks.isEmpty && appState.todaysTasks.isEmpty {
+                        EmptyTasksView()
+                    } else if pendingTasks.isEmpty {
+                        // All completed - show briefly before celebration
+                        VStack(spacing: MomentumSpacing.standard) {
+                            Ph.checkCircle.fill
+                                .frame(width: 48, height: 48)
+                                .foregroundColor(.momentumSuccess)
 
-                                Text("All done for today!")
-                                    .font(MomentumFont.bodyMedium())
-                                    .foregroundColor(.momentumTextSecondary)
-                            }
-                            .padding(.top, MomentumSpacing.large)
-                        } else {
-                            VStack(spacing: MomentumSpacing.standard) {
-                                ForEach(Array(pendingTasks.enumerated()), id: \.element.id) { index, task in
-                                    TaskCardView(
-                                        task: task,
-                                        goalName: goalName(for: task),
-                                        onComplete: {
-                                            completeTask(task)
-                                        },
-                                        onExpand: {}
-                                    )
-                                    .offset(y: appeared ? 0 : 30)
-                                    .opacity(appeared ? 1 : 0)
-                                    .animation(
-                                        .spring(response: 0.6, dampingFraction: 0.8)
-                                        .delay(Double(index) * 0.1),
-                                        value: appeared
-                                    )
-                                }
-                            }
-                            .padding(.horizontal, MomentumSpacing.comfortable)
+                            Text("All done for today!")
+                                .font(MomentumFont.bodyMedium())
+                                .foregroundColor(.momentumTextSecondary)
                         }
-
-                        // Bottom spacing for tab bar
-                        Spacer(minLength: 100)
+                    } else {
+                        CardStackView(
+                            tasks: pendingTasks,
+                            goalNameForTask: { goalName(for: $0) },
+                            onComplete: { completeTask($0) },
+                            onExpand: { _ in }
+                        )
+                        .frame(height: UIScreen.main.bounds.height * 0.55)
                     }
+
+                    Spacer()
+                    
+                    // Bottom spacing for tab bar
+                    Spacer(minLength: 60)
                 }
             }
         }
@@ -154,6 +141,136 @@ struct HomeView: View {
                 withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
                     showCelebration = true
                 }
+            }
+        }
+    }
+}
+
+// MARK: - Card Stack View
+
+struct CardStackView: View {
+    let tasks: [MomentumTask]
+    let goalNameForTask: (MomentumTask) -> String
+    let onComplete: (MomentumTask) -> Void
+    let onExpand: (MomentumTask) -> Void
+
+    @State private var currentIndex: Int = 0
+    @State private var dragOffset: CGFloat = 0
+    @State private var isTossing = false
+    @State private var hiddenCardIndex: Int? = nil
+
+    private let swipeThreshold: CGFloat = 60
+    private let peekOffsetX: CGFloat = 25
+    private let backScale: CGFloat = 0.92
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                ForEach(Array(tasks.enumerated()), id: \.element.id) { index, task in
+                    let position = relativePosition(of: index)
+                    let isFront = position == 0
+
+                    TaskCardView(
+                        task: task,
+                        goalName: goalNameForTask(task),
+                        onComplete: { onComplete(task) },
+                        onExpand: { onExpand(task) },
+                        onDragChanged: isFront ? { offset in
+                            guard !isTossing else { return }
+                            dragOffset = offset
+                        } : nil,
+                        onDragEnded: isFront ? { offset, velocity in
+                            guard !isTossing else { return }
+                            handleDragEnd(offset: offset, velocity: velocity, screenWidth: geometry.size.width)
+                        } : nil
+                    )
+                    .padding(.horizontal, MomentumSpacing.comfortable)
+                    .padding(.bottom, MomentumSpacing.large)
+                    .zIndex(isFront ? 10 : Double(5 - abs(position)))
+                    .scaleEffect(isFront ? 1.0 : backScale)
+                    .offset(
+                        x: isFront ? dragOffset : CGFloat(position) * peekOffsetX,
+                        y: isFront ? -abs(dragOffset) * 0.1 : 0
+                    )
+                    .rotationEffect(
+                        isFront ? .degrees(Double(dragOffset) / 18.0) : .zero
+                    )
+                    .opacity(cardOpacity(index: index, position: position))
+                    .allowsHitTesting(isFront && !isTossing)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .onChange(of: tasks.count) { newCount in
+            if newCount > 0 && currentIndex >= newCount {
+                currentIndex = 0
+            }
+        }
+    }
+
+    // MARK: - Positioning
+
+    private func relativePosition(of index: Int) -> Int {
+        let count = tasks.count
+        guard count > 0 else { return 0 }
+        var diff = index - currentIndex
+        if count > 1 {
+            while diff > count / 2 { diff -= count }
+            while diff <= -(count + 1) / 2 { diff += count }
+        }
+        return diff
+    }
+
+    private func cardOpacity(index: Int, position: Int) -> Double {
+        if index == hiddenCardIndex { return 0 }
+        if abs(position) > 1 { return 0.5 }
+        if abs(position) == 1 { return 0.85 }
+        return 1.0
+    }
+
+    // MARK: - Drag & Toss
+
+    private func handleDragEnd(offset: CGFloat, velocity: CGFloat, screenWidth: CGFloat) {
+        let shouldSwipe = abs(offset) > swipeThreshold || abs(velocity) > 500
+        guard shouldSwipe, tasks.count > 1 else {
+            // Spring back to center
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                dragOffset = 0
+            }
+            return
+        }
+
+        let direction: CGFloat = offset > 0 ? 1 : -1
+        isTossing = true
+
+        // 1. Toss the front card off-screen diagonally
+        withAnimation(.easeOut(duration: 0.3)) {
+            dragOffset = direction * (screenWidth + 150)
+        }
+
+        // 2. After toss animation, swap cards
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            let oldIndex = currentIndex
+            hiddenCardIndex = oldIndex
+
+            // Reset drag offset without animation
+            dragOffset = 0
+
+            // Advance index — back cards animate to new positions
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
+                if direction > 0 {
+                    currentIndex = (currentIndex + 1) % tasks.count
+                } else {
+                    currentIndex = (currentIndex - 1 + tasks.count) % tasks.count
+                }
+            }
+
+            // 3. Fade the tossed card back in at its new peek position
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                withAnimation(.easeIn(duration: 0.25)) {
+                    hiddenCardIndex = nil
+                }
+                isTossing = false
             }
         }
     }

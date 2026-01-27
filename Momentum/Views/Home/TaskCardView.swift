@@ -8,117 +8,139 @@
 import SwiftUI
 import PhosphorSwift
 
+// MARK: - Squircle Shape (Superellipse)
+
+struct Squircle: Shape {
+    var n: CGFloat = 4
+
+    func path(in rect: CGRect) -> Path {
+        let a = rect.width / 2
+        let b = rect.height / 2
+        let centerX = rect.midX
+        let centerY = rect.midY
+        let exp = 2.0 / n
+        let steps = 360
+
+        var path = Path()
+
+        for i in 0...steps {
+            let angle = Double(i) * (2 * .pi / Double(steps))
+            let cosA = cos(angle)
+            let sinA = sin(angle)
+
+            let x = centerX + a * pow(abs(cosA), exp) * (cosA >= 0 ? 1 : -1)
+            let y = centerY + b * pow(abs(sinA), exp) * (sinA >= 0 ? 1 : -1)
+
+            if i == 0 {
+                path.move(to: CGPoint(x: x, y: y))
+            } else {
+                path.addLine(to: CGPoint(x: x, y: y))
+            }
+        }
+
+        path.closeSubpath()
+        return path
+    }
+}
+
 struct TaskCardView: View {
     let task: MomentumTask
     let goalName: String
     let onComplete: () -> Void
     let onExpand: () -> Void
+    var onDragChanged: ((CGFloat) -> Void)? = nil
+    var onDragEnded: ((CGFloat, CGFloat) -> Void)? = nil // (offset, velocity)
 
     @State private var isHolding = false
     @State private var holdProgress: CGFloat = 0
     @State private var completionPopAway = false
 
-    private let holdDuration: Double = 1.0
-    private let squircleRadius: CGFloat = 60
+    private let holdDuration: Double = 1.5
+
+    private let fillColor = Color(red: 0.118, green: 0.161, blue: 0.231) // #1E293B
 
     var body: some View {
-        VStack(alignment: .center, spacing: MomentumSpacing.standard) {
-            // Header with Goal and Time
-            HStack {
-                HStack(spacing: 6) {
-                    Ph.folder.fill
-                        .frame(width: 16, height: 16)
-                    Text(goalName)
-                        .font(MomentumFont.label())
-                        .lineLimit(1)
+        ZStack {
+            // Layer 1: White background
+            Squircle(n: 4)
+                .fill(Color.white)
+
+            // Layer 2: Dark slate fill (behind text, animated via scaleEffect)
+            Squircle(n: 4)
+                .fill(fillColor)
+                .scaleEffect(holdProgress)
+
+            // Layer 3: Text content (always on top, always readable)
+            VStack(alignment: .center, spacing: MomentumSpacing.standard) {
+                // Header with Goal and Time
+                HStack {
+                    HStack(spacing: 6) {
+                        Ph.folder.fill
+                            .frame(width: 16, height: 16)
+                        Text(goalName)
+                            .font(MomentumFont.label())
+                            .lineLimit(1)
+                    }
+                    .foregroundColor(holdProgress > 0.5 ? .white.opacity(0.8) : .momentumTextSecondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(holdProgress > 0.5 ? Color.white.opacity(0.15) : Color.momentumBackgroundSecondary)
+                    .cornerRadius(12)
+
+                    Spacer()
+
+                    HStack(spacing: 6) {
+                        Ph.clock.fill
+                            .frame(width: 16, height: 16)
+                        Text("\(task.estimatedMinutes) min")
+                            .font(MomentumFont.label())
+                    }
+                    .foregroundColor(holdProgress > 0.5 ? .white.opacity(0.8) : .momentumTextSecondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(holdProgress > 0.5 ? Color.white.opacity(0.15) : Color.momentumBackgroundSecondary)
+                    .cornerRadius(12)
                 }
-                .foregroundColor(holdProgress > 0.6 ? .white.opacity(0.8) : .momentumTextSecondary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(holdProgress > 0.6 ? Color.white.opacity(0.15) : Color.momentumBackgroundSecondary)
-                .cornerRadius(12)
 
                 Spacer()
 
-                HStack(spacing: 6) {
-                    Ph.clock.fill
-                        .frame(width: 16, height: 16)
-                    Text("\(task.estimatedMinutes) min")
-                        .font(MomentumFont.label())
-                }
-                .foregroundColor(holdProgress > 0.6 ? .white.opacity(0.8) : .momentumTextSecondary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(holdProgress > 0.6 ? Color.white.opacity(0.15) : Color.momentumBackgroundSecondary)
-                .cornerRadius(12)
-            }
-
-            Spacer()
-
-            // Title
-            Text(task.title)
-                .font(MomentumFont.headingLarge())
-                .foregroundColor(holdProgress > 0.6 ? .white : .momentumTextPrimary)
-                .lineLimit(3)
-                .multilineTextAlignment(.center)
-
-            // Description
-            if let description = task.taskDescription {
-                Text(description)
-                    .font(MomentumFont.body())
-                    .foregroundColor(holdProgress > 0.6 ? .white.opacity(0.7) : .momentumTextSecondary)
-                    .lineLimit(4)
+                // Title
+                Text(task.title)
+                    .font(MomentumFont.headingLarge())
+                    .foregroundColor(holdProgress > 0.5 ? .white : .momentumTextPrimary)
+                    .lineLimit(3)
                     .multilineTextAlignment(.center)
-            }
 
-            Spacer()
-
-            // Microsteps hint
-            if !task.microsteps.isEmpty {
-                HStack(spacing: 4) {
-                    Ph.listChecks.regular
-                        .frame(width: 18, height: 18)
-                    Text("\(task.microsteps.count) steps")
+                // Description
+                if let description = task.taskDescription {
+                    Text(description)
+                        .font(MomentumFont.body())
+                        .foregroundColor(holdProgress > 0.5 ? .white.opacity(0.7) : .momentumTextSecondary)
+                        .lineLimit(4)
+                        .multilineTextAlignment(.center)
                 }
-                .font(MomentumFont.bodyMedium())
-                .foregroundColor(holdProgress > 0.6 ? .white.opacity(0.7) : .momentumTextSecondary)
-            }
-        }
-        .padding(32)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: squircleRadius, style: .continuous))
-        .overlay(
-            // Hold fill animation - purple blob materializes from center-high and expands
-            GeometryReader { geometry in
-                let centerX = geometry.size.width / 2
-                let centerY = geometry.size.height * 0.4 // Slightly above center
-                let maxDimension = max(geometry.size.width, geometry.size.height) * 1.5
 
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [
-                                Color.momentumViolet,
-                                Color.momentumViolet.opacity(0.9),
-                                Color(red: 0.38, green: 0.15, blue: 0.85)
-                            ],
-                            center: .center,
-                            startRadius: 0,
-                            endRadius: maxDimension / 2
-                        )
-                    )
-                    .frame(width: maxDimension * holdProgress, height: maxDimension * holdProgress)
-                    .position(x: centerX, y: centerY)
-                    .opacity(holdProgress == 0 ? 0 : 1)
+                Spacer()
+
+                // Microsteps hint
+                if !task.microsteps.isEmpty {
+                    HStack(spacing: 4) {
+                        Ph.listChecks.regular
+                            .frame(width: 18, height: 18)
+                        Text("\(task.microsteps.count) steps")
+                    }
+                    .font(MomentumFont.bodyMedium())
+                    .foregroundColor(holdProgress > 0.5 ? .white.opacity(0.7) : .momentumTextSecondary)
+                }
             }
-            .clipShape(RoundedRectangle(cornerRadius: squircleRadius, style: .continuous))
-            .allowsHitTesting(false)
-        )
+            .padding(32)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipShape(Squircle(n: 4))
         .overlay(
             // Subtle border
-            RoundedRectangle(cornerRadius: squircleRadius, style: .continuous)
-                .strokeBorder(Color.black.opacity(0.06), lineWidth: 1)
+            Squircle(n: 4)
+                .stroke(Color.black.opacity(0.06), lineWidth: 1)
         )
         .shadow(
             color: Color.black.opacity(0.08),
@@ -134,7 +156,7 @@ struct TaskCardView: View {
             onExpand()
             SoundManager.shared.selectionHaptic()
         }
-        .onLongPressGesture(minimumDuration: holdDuration, maximumDistance: 50) {
+        .onLongPressGesture(minimumDuration: holdDuration, maximumDistance: 25) {
             // Completed
             completeTask()
         } onPressingChanged: { pressing in
@@ -144,25 +166,41 @@ struct TaskCardView: View {
                 cancelHold()
             }
         }
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 25)
+                .onChanged { value in
+                    if isHolding { cancelHold() }
+                    onDragChanged?(value.translation.width)
+                }
+                .onEnded { value in
+                    let velocity = value.predictedEndTranslation.width - value.translation.width
+                    onDragEnded?(value.translation.width, velocity)
+                }
+        )
     }
 
     // MARK: - Hold Gesture
 
     private func startHold() {
         isHolding = true
-        holdProgress = 0
         SoundManager.shared.lightHaptic()
 
-        // Animate the purple fill expanding
-        withAnimation(.easeInOut(duration: holdDuration)) {
-            holdProgress = 1.0
+        // Escape the gesture's implicit animation transaction
+        // so our explicit animation isn't overridden
+        DispatchQueue.main.async {
+            withAnimation(.easeInOut(duration: holdDuration)) {
+                holdProgress = 1.0
+            }
         }
     }
 
     private func cancelHold() {
         isHolding = false
-        withAnimation(.easeOut(duration: 0.2)) {
-            holdProgress = 0
+        // Escape the gesture's implicit transaction here too
+        DispatchQueue.main.async {
+            withAnimation(.easeOut(duration: 0.2)) {
+                holdProgress = 0
+            }
         }
     }
 
