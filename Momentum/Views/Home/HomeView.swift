@@ -13,6 +13,7 @@ struct HomeView: View {
     @State private var appeared = false
     @State private var completedTaskIds: Set<UUID> = []
     @State private var showCelebration = false
+    @State private var expandedTask: MomentumTask? = nil
 
     // Calculate points for display
     private var weeklyPoints: Int {
@@ -81,9 +82,9 @@ struct HomeView: View {
                             tasks: pendingTasks,
                             goalNameForTask: { goalName(for: $0) },
                             onComplete: { completeTask($0) },
-                            onExpand: { _ in }
+                            onExpand: { task in expandedTask = task }
                         )
-                        .frame(height: UIScreen.main.bounds.height * 0.55)
+                        .frame(height: ((UIApplication.shared.connectedScenes.first as? UIWindowScene)?.screen.bounds.height ?? 800) * 0.55)
                     }
 
                     Spacer()
@@ -95,6 +96,15 @@ struct HomeView: View {
         }
         .onAppear {
             appeared = true
+        }
+        .sheet(item: $expandedTask) { task in
+            TaskExpandedView(
+                task: task,
+                goalName: goalName(for: task),
+                onComplete: {
+                    completeTask(task)
+                }
+            )
         }
     }
 
@@ -201,7 +211,7 @@ struct CardStackView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .onChange(of: tasks.count) { newCount in
+        .onChange(of: tasks.count) { _, newCount in
             if newCount > 0 && currentIndex >= newCount {
                 currentIndex = 0
             }
