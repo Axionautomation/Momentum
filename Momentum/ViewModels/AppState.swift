@@ -328,7 +328,7 @@ class AppState: ObservableObject {
         }
     }
 
-    private func updateTaskInGoal(_ task: MomentumTask) {
+    func updateTaskInGoal(_ task: MomentumTask) {
         // Try project goal
         if var goal = activeProjectGoal {
             for (pgIndex, powerGoal) in goal.powerGoals.enumerated() {
