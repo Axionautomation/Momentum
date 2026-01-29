@@ -206,16 +206,26 @@ class AppState: ObservableObject {
     // MARK: - Task Management
 
     /// Load all content for today (project tasks, habit check-ins, identity task)
+    /// Tasks are loaded with rollover: pending tasks from today or earlier appear first,
+    /// capped at 3 tasks maximum. Oldest tasks by scheduledDate take priority.
     func loadTodaysContent() {
         let today = Calendar.current.startOfDay(for: Date())
 
-        // Load project tasks (3 tasks from active milestone)
+        // Load project tasks: pending tasks scheduled for today or earlier, max 3
         if let projectGoal = activeProjectGoal,
            let currentPowerGoal = projectGoal.powerGoals.first(where: { $0.status == .active }),
            let currentMilestone = currentPowerGoal.weeklyMilestones.first(where: { $0.status == .inProgress }) {
-            todaysTasks = currentMilestone.tasks.filter {
-                Calendar.current.isDate($0.scheduledDate, inSameDayAs: today)
+
+            // Get all pending tasks scheduled for today or before (rollover logic)
+            let pendingTasks = currentMilestone.tasks.filter {
+                $0.status == .pending &&
+                Calendar.current.startOfDay(for: $0.scheduledDate) <= today
             }
+
+            // Sort by scheduledDate (oldest first) and take max 3
+            todaysTasks = Array(
+                pendingTasks.sorted { $0.scheduledDate < $1.scheduledDate }.prefix(3)
+            )
         } else {
             todaysTasks = []
         }
@@ -236,6 +246,35 @@ class AppState: ObservableObject {
     /// Legacy method for backward compatibility
     func loadTodaysTasks() {
         loadTodaysContent()
+    }
+
+    /// Load the next batch of tasks (for working ahead after completing today's tasks)
+    /// Gets the next 3 pending tasks from the active milestone, regardless of scheduledDate
+    func loadNextTasks() {
+        if let projectGoal = activeProjectGoal,
+           let currentPowerGoal = projectGoal.powerGoals.first(where: { $0.status == .active }),
+           let currentMilestone = currentPowerGoal.weeklyMilestones.first(where: { $0.status == .inProgress }) {
+
+            // Get all pending tasks, sorted by scheduledDate
+            let pendingTasks = currentMilestone.tasks
+                .filter { $0.status == .pending }
+                .sorted { $0.scheduledDate < $1.scheduledDate }
+
+            // Take the next 3
+            todaysTasks = Array(pendingTasks.prefix(3))
+        }
+    }
+
+    /// Check if there are more pending tasks available after completing current ones
+    var hasMorePendingTasks: Bool {
+        guard let projectGoal = activeProjectGoal,
+              let currentPowerGoal = projectGoal.powerGoals.first(where: { $0.status == .active }),
+              let currentMilestone = currentPowerGoal.weeklyMilestones.first(where: { $0.status == .inProgress }) else {
+            return false
+        }
+
+        let pendingCount = currentMilestone.tasks.filter { $0.status == .pending }.count
+        return pendingCount > 0
     }
 
     /// Generate habit check-ins for a specific date

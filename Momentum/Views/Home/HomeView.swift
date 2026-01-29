@@ -47,7 +47,7 @@ struct HomeView: View {
                         withAnimation {
                             showCelebration = false
                         }
-                        appState.selectedTab = .progress
+                        // Stay on home tab to show "work ahead" option
                     }
                 )
                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
@@ -67,15 +67,42 @@ struct HomeView: View {
                     if pendingTasks.isEmpty && appState.todaysTasks.isEmpty {
                         EmptyTasksView()
                     } else if pendingTasks.isEmpty {
-                        // All completed - show briefly before celebration
-                        VStack(spacing: MomentumSpacing.standard) {
-                            Ph.checkCircle.fill
-                                .frame(width: 48, height: 48)
-                                .foregroundColor(.momentumSuccess)
+                        // All tasks completed
+                        VStack(spacing: MomentumSpacing.section) {
+                            VStack(spacing: MomentumSpacing.standard) {
+                                Ph.checkCircle.fill
+                                    .frame(width: 56, height: 56)
+                                    .foregroundColor(.momentumSuccess)
 
-                            Text("All done for today!")
-                                .font(MomentumFont.bodyMedium())
-                                .foregroundColor(.momentumTextSecondary)
+                                Text("All done for today!")
+                                    .font(MomentumFont.headingMedium())
+                                    .foregroundColor(.momentumTextPrimary)
+
+                                Text("You've completed all your tasks")
+                                    .font(MomentumFont.body())
+                                    .foregroundColor(.momentumTextSecondary)
+                            }
+
+                            // Work ahead button
+                            if appState.hasMorePendingTasks {
+                                Button {
+                                    completedTaskIds.removeAll()
+                                    appState.loadNextTasks()
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        Ph.arrowRight.bold
+                                            .frame(width: 18, height: 18)
+                                        Text("See Tomorrow's Tasks")
+                                            .font(MomentumFont.bodyMedium())
+                                    }
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, MomentumSpacing.section)
+                                    .padding(.vertical, MomentumSpacing.standard)
+                                    .background(MomentumGradients.primary)
+                                    .cornerRadius(16)
+                                }
+                                .padding(.top, MomentumSpacing.compact)
+                            }
                         }
                     } else {
                         CardStackView(
