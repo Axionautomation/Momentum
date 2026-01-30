@@ -46,6 +46,7 @@ struct Squircle: Shape {
 struct TaskCardView: View {
     let task: MomentumTask
     let goalName: String
+    var isCompleted: Bool = false
     let onComplete: () -> Void
     let onExpand: () -> Void
     var onDragChanged: ((CGFloat) -> Void)? = nil
@@ -58,6 +59,12 @@ struct TaskCardView: View {
     private let holdDuration: Double = 1.5
 
     private let fillColor = Color(red: 0.118, green: 0.161, blue: 0.231) // #1E293B
+    private let completedFillColor = Color(hex: "2563EB") // Blue for completed tasks
+
+    // Whether to show light (white) text - for completed or during hold
+    private var showLightText: Bool {
+        isCompleted || holdProgress > 0.5
+    }
 
     var body: some View {
         ZStack {
@@ -65,10 +72,10 @@ struct TaskCardView: View {
             Squircle(n: 4)
                 .fill(Color.white)
 
-            // Layer 2: Dark slate fill (behind text, animated via scaleEffect)
+            // Layer 2: Fill color - blue for completed, dark slate for hold progress
             Squircle(n: 4)
-                .fill(fillColor)
-                .scaleEffect(holdProgress)
+                .fill(isCompleted ? completedFillColor : fillColor)
+                .scaleEffect(isCompleted ? 1.0 : holdProgress)
 
             // Layer 3: Text content (always on top, always readable)
             VStack(alignment: .center, spacing: MomentumSpacing.standard) {
@@ -81,25 +88,40 @@ struct TaskCardView: View {
                             .font(MomentumFont.label())
                             .lineLimit(1)
                     }
-                    .foregroundColor(holdProgress > 0.5 ? .white.opacity(0.8) : .momentumTextSecondary)
+                    .foregroundColor(showLightText ? .white.opacity(0.8) : .momentumTextSecondary)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
-                    .background(holdProgress > 0.5 ? Color.white.opacity(0.15) : Color.momentumBackgroundSecondary)
+                    .background(showLightText ? Color.white.opacity(0.15) : Color.momentumBackgroundSecondary)
                     .cornerRadius(12)
 
                     Spacer()
 
-                    HStack(spacing: 6) {
-                        Ph.clock.fill
-                            .frame(width: 16, height: 16)
-                        Text("\(task.estimatedMinutes) min")
-                            .font(MomentumFont.label())
+                    // Show checkmark for completed tasks, time for pending
+                    if isCompleted {
+                        HStack(spacing: 6) {
+                            Ph.checkCircle.fill
+                                .frame(width: 16, height: 16)
+                            Text("Done")
+                                .font(MomentumFont.label())
+                        }
+                        .foregroundColor(.white.opacity(0.8))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.white.opacity(0.15))
+                        .cornerRadius(12)
+                    } else {
+                        HStack(spacing: 6) {
+                            Ph.clock.fill
+                                .frame(width: 16, height: 16)
+                            Text("\(task.estimatedMinutes) min")
+                                .font(MomentumFont.label())
+                        }
+                        .foregroundColor(showLightText ? .white.opacity(0.8) : .momentumTextSecondary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(showLightText ? Color.white.opacity(0.15) : Color.momentumBackgroundSecondary)
+                        .cornerRadius(12)
                     }
-                    .foregroundColor(holdProgress > 0.5 ? .white.opacity(0.8) : .momentumTextSecondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(holdProgress > 0.5 ? Color.white.opacity(0.15) : Color.momentumBackgroundSecondary)
-                    .cornerRadius(12)
                 }
 
                 Spacer()
@@ -107,7 +129,7 @@ struct TaskCardView: View {
                 // Title
                 Text(task.title)
                     .font(MomentumFont.headingLarge())
-                    .foregroundColor(holdProgress > 0.5 ? .white : .momentumTextPrimary)
+                    .foregroundColor(showLightText ? .white : .momentumTextPrimary)
                     .lineLimit(3)
                     .multilineTextAlignment(.center)
 
@@ -115,7 +137,7 @@ struct TaskCardView: View {
                 if let description = task.taskDescription {
                     Text(description)
                         .font(MomentumFont.body())
-                        .foregroundColor(holdProgress > 0.5 ? .white.opacity(0.7) : .momentumTextSecondary)
+                        .foregroundColor(showLightText ? .white.opacity(0.7) : .momentumTextSecondary)
                         .lineLimit(4)
                         .multilineTextAlignment(.center)
                 }
@@ -130,7 +152,7 @@ struct TaskCardView: View {
                         Text("\(task.microsteps.count) steps")
                     }
                     .font(MomentumFont.bodyMedium())
-                    .foregroundColor(holdProgress > 0.5 ? .white.opacity(0.7) : .momentumTextSecondary)
+                    .foregroundColor(showLightText ? .white.opacity(0.7) : .momentumTextSecondary)
                 }
             }
             .padding(32)
@@ -157,9 +179,13 @@ struct TaskCardView: View {
             SoundManager.shared.selectionHaptic()
         }
         .onLongPressGesture(minimumDuration: holdDuration, maximumDistance: 25) {
-            // Completed
-            completeTask()
+            // Only complete if not already completed
+            if !isCompleted {
+                completeTask()
+            }
         } onPressingChanged: { pressing in
+            // Only show hold progress for non-completed tasks
+            guard !isCompleted else { return }
             if pressing {
                 startHold()
             } else {

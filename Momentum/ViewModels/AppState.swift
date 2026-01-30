@@ -14,16 +14,12 @@ class AppState: ObservableObject {
     @Published var isOnboarded: Bool = false
     @Published var currentUser: MomentumUser?
 
-    // Multi-Goal Architecture
+    // Goal State
     @Published var activeProjectGoal: Goal?
-    @Published var activeHabitGoals: [Goal] = []
-    @Published var activeIdentityGoal: Goal?
     @Published var archivedGoals: [Goal] = []
 
     // Today's Content
     @Published var todaysTasks: [MomentumTask] = []      // Project tasks (3)
-    @Published var todaysHabits: [HabitCheckIn] = []     // Habit check-ins
-    @Published var todaysIdentityTask: MomentumTask?     // 1 identity task
 
     // UI State
     @Published var selectedTab: Tab = .home
@@ -37,14 +33,14 @@ class AppState: ObservableObject {
     // MARK: - Tab Enum
     enum Tab: String, CaseIterable {
         case home = "Home"
-        case progress = "Progress"
+        case process = "Process"
         case mindset = "Mindset"
         case profile = "Profile"
 
         var icon: String {
             switch self {
             case .home: return "house"
-            case .progress: return "chart"
+            case .process: return "squares"
             case .mindset: return "brain"
             case .profile: return "user"
             }
@@ -66,6 +62,8 @@ class AppState: ObservableObject {
             loadMockData()
             // Migrate tasks if needed
             migrateTasksIfNeeded()
+            // Load AI data
+            loadAIData()
         }
     }
 
@@ -76,15 +74,8 @@ class AppState: ObservableObject {
         // Create user
         currentUser = MomentumUser(email: "user@example.com")
 
-        // Set goal based on type
-        switch goal.goalType {
-        case .project:
-            activeProjectGoal = goal
-        case .habit:
-            activeHabitGoals = [goal]
-        case .identity:
-            activeIdentityGoal = goal
-        }
+        // Set the project goal
+        activeProjectGoal = goal
 
         // Persist
         saveAllGoals()
@@ -92,6 +83,24 @@ class AppState: ObservableObject {
 
         // Load today's content
         loadTodaysContent()
+
+        // Trigger AI processing for initial tasks
+        Task {
+            await triggerInitialAIProcessing()
+        }
+    }
+
+    /// Trigger AI processing for all initial tasks after onboarding
+    private func triggerInitialAIProcessing() async {
+        guard let goal = activeProjectGoal else { return }
+
+        // Process each of today's tasks for AI analysis
+        for task in todaysTasks {
+            await aiProcessor.processNewTask(task, goal: goal)
+        }
+
+        // Save AI data after processing
+        saveAIData()
     }
 
     func loadMockData() {
@@ -119,17 +128,6 @@ class AppState: ObservableObject {
             UserDefaults.standard.set(encoded, forKey: "savedProjectGoal")
         }
 
-        // Save habit goals
-        if let encoded = try? JSONEncoder().encode(activeHabitGoals) {
-            UserDefaults.standard.set(encoded, forKey: "savedHabitGoals")
-        }
-
-        // Save identity goal
-        if let identity = activeIdentityGoal,
-           let encoded = try? JSONEncoder().encode(identity) {
-            UserDefaults.standard.set(encoded, forKey: "savedIdentityGoal")
-        }
-
         // Save archived goals
         if let encoded = try? JSONEncoder().encode(archivedGoals) {
             UserDefaults.standard.set(encoded, forKey: "savedArchivedGoals")
@@ -144,18 +142,6 @@ class AppState: ObservableObject {
             activeProjectGoal = project
         }
 
-        // Load habit goals
-        if let data = UserDefaults.standard.data(forKey: "savedHabitGoals"),
-           let habits = try? JSONDecoder().decode([Goal].self, from: data) {
-            activeHabitGoals = habits
-        }
-
-        // Load identity goal
-        if let data = UserDefaults.standard.data(forKey: "savedIdentityGoal"),
-           let identity = try? JSONDecoder().decode(Goal.self, from: data) {
-            activeIdentityGoal = identity
-        }
-
         // Load archived goals
         if let data = UserDefaults.standard.data(forKey: "savedArchivedGoals"),
            let archived = try? JSONDecoder().decode([Goal].self, from: data) {
@@ -163,20 +149,9 @@ class AppState: ObservableObject {
         }
     }
 
-    /// Legacy: Save a single goal (kept for backward compatibility)
+    /// Save a goal
     func saveGoal(_ goal: Goal) {
-        switch goal.goalType {
-        case .project:
-            activeProjectGoal = goal
-        case .habit:
-            if !activeHabitGoals.contains(where: { $0.id == goal.id }) {
-                activeHabitGoals.append(goal)
-            } else if let index = activeHabitGoals.firstIndex(where: { $0.id == goal.id }) {
-                activeHabitGoals[index] = goal
-            }
-        case .identity:
-            activeIdentityGoal = goal
-        }
+        activeProjectGoal = goal
         saveAllGoals()
     }
 
@@ -230,17 +205,6 @@ class AppState: ObservableObject {
             todaysTasks = []
         }
 
-        // Load habit check-ins
-        todaysHabits = activeHabitGoals.flatMap { habit in
-            generateHabitCheckIns(for: habit, date: today)
-        }
-
-        // Load identity task
-        if let identityGoal = activeIdentityGoal {
-            todaysIdentityTask = generateDailyIdentityTask(for: identityGoal, date: today)
-        } else {
-            todaysIdentityTask = nil
-        }
     }
 
     /// Legacy method for backward compatibility
@@ -277,64 +241,6 @@ class AppState: ObservableObject {
         return pendingCount > 0
     }
 
-    /// Generate habit check-ins for a specific date
-    private func generateHabitCheckIns(for habit: Goal, date: Date) -> [HabitCheckIn] {
-        guard habit.goalType == .habit else { return [] }
-
-        // Check if habit should be done today based on frequency
-        let shouldDoToday = shouldPerformHabit(habit, on: date)
-        guard shouldDoToday else { return [] }
-
-        // Create or return existing check-in
-        return [HabitCheckIn(
-            habitGoalId: habit.id,
-            scheduledDate: date,
-            isCompleted: false,
-            completedAt: nil,
-            notes: nil,
-            skipped: false
-        )]
-    }
-
-    /// Check if a habit should be performed on a given date
-    private func shouldPerformHabit(_ habit: Goal, on date: Date) -> Bool {
-        guard let config = habit.habitConfig else { return false }
-
-        let weekday = Calendar.current.component(.weekday, from: date) - 1 // 0 = Sunday
-
-        switch config.frequency {
-        case .daily:
-            return true
-        case .weekdays:
-            return weekday >= 1 && weekday <= 5 // Monday-Friday
-        case .weekends:
-            return weekday == 0 || weekday == 6 // Saturday-Sunday
-        case .custom:
-            return config.customDays?.contains(weekday) ?? false
-        }
-    }
-
-    /// Generate daily identity task
-    private func generateDailyIdentityTask(for identity: Goal, date: Date) -> MomentumTask? {
-        guard identity.goalType == .identity else { return nil }
-
-        // Create a simple evidence collection task
-        let taskId = UUID()
-        let prompt = identity.identityConfig?.identityStatement ?? "Build your identity"
-
-        return MomentumTask(
-            id: taskId,
-            weeklyMilestoneId: UUID(), // Not used for identity tasks
-            goalId: identity.id,
-            title: "Evidence: \(prompt)",
-            taskDescription: "Log evidence of living this identity today",
-            difficulty: .easy,
-            estimatedMinutes: 10,
-            isAnchorTask: false,
-            scheduledDate: date,
-            status: .pending
-        )
-    }
 
     func completeTask(_ task: MomentumTask) {
         guard let index = todaysTasks.firstIndex(where: { $0.id == task.id }) else { return }
@@ -365,6 +271,18 @@ class AppState: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             self.showTaskCompletionCelebration = false
         }
+    }
+
+    func uncompleteTask(_ task: MomentumTask) {
+        guard let index = todaysTasks.firstIndex(where: { $0.id == task.id }) else { return }
+
+        var updatedTask = task
+        updatedTask.status = .pending
+        updatedTask.completedAt = nil
+        todaysTasks[index] = updatedTask
+
+        // Update the task in the goal structure
+        updateTaskInGoal(updatedTask)
     }
 
     func updateTaskInGoal(_ task: MomentumTask) {
@@ -446,110 +364,22 @@ class AppState: ObservableObject {
         saveUser(user)
     }
 
-    // MARK: - Habit Management
-
-    /// Complete a habit check-in and update streak
-    func completeHabitCheckIn(_ checkIn: HabitCheckIn) {
-        guard let habitIndex = activeHabitGoals.firstIndex(where: { $0.id == checkIn.habitGoalId }) else { return }
-
-        // Update check-in
-        if let checkInIndex = todaysHabits.firstIndex(where: { $0.id == checkIn.id }) {
-            todaysHabits[checkInIndex].isCompleted = true
-            todaysHabits[checkInIndex].completedAt = Date()
-        }
-
-        // Update habit streak
-        updateHabitStreak(&activeHabitGoals[habitIndex])
-        saveAllGoals()
-    }
-
-    /// Update streak for a habit goal
-    func updateHabitStreak(_ habit: inout Goal) {
-        guard habit.goalType == .habit, var config = habit.habitConfig else { return }
-
-        let now = Date()
-        let calendar = Calendar.current
-
-        if let lastCompleted = config.lastCompletedDate {
-            let daysSinceLast = calendar.dateComponents([.day], from: calendar.startOfDay(for: lastCompleted), to: calendar.startOfDay(for: now)).day ?? 0
-
-            if daysSinceLast <= 1 {
-                // Continue streak (same day or next day)
-                if daysSinceLast == 1 {
-                    config.currentStreak += 1
-                }
-                // If same day (daysSinceLast == 0), don't increment
-            } else {
-                // Streak broken
-                config.currentStreak = 1
-            }
-        } else {
-            config.currentStreak = 1
-        }
-
-        config.lastCompletedDate = now
-        if config.currentStreak > config.longestStreak {
-            config.longestStreak = config.currentStreak
-        }
-
-        habit.habitConfig = config
-    }
-
-    // MARK: - Identity Management
-
-    /// Add an evidence entry to an identity goal
-    func addEvidenceEntry(_ entry: EvidenceEntry, to goalId: UUID) {
-        if var identity = activeIdentityGoal, identity.id == goalId {
-            identity.identityConfig?.evidenceEntries.append(entry)
-            activeIdentityGoal = identity
-            saveAllGoals()
-        }
-    }
-
-    /// Complete an identity milestone
-    func completeIdentityMilestone(_ milestoneId: UUID, in goalId: UUID, with evidenceId: UUID?) {
-        if var identity = activeIdentityGoal, identity.id == goalId,
-           let milestoneIndex = identity.identityConfig?.milestones.firstIndex(where: { $0.id == milestoneId }) {
-            identity.identityConfig?.milestones[milestoneIndex].isCompleted = true
-            identity.identityConfig?.milestones[milestoneIndex].completedDate = Date()
-            identity.identityConfig?.milestones[milestoneIndex].evidenceId = evidenceId
-            activeIdentityGoal = identity
-            saveAllGoals()
-        }
-    }
-
     // MARK: - Goal Management
 
     /// Add a new goal
     func addGoal(_ goal: Goal) {
-        switch goal.goalType {
-        case .project:
-            activeProjectGoal = goal
-        case .habit:
-            activeHabitGoals.append(goal)
-        case .identity:
-            activeIdentityGoal = goal
-        }
+        activeProjectGoal = goal
         saveAllGoals()
         loadTodaysContent()
     }
 
     /// Archive a goal
     func archiveGoal(_ goalId: UUID) {
-        var goalToArchive: Goal?
+        guard activeProjectGoal?.id == goalId else { return }
 
-        // Find and remove from active goals
-        if activeProjectGoal?.id == goalId {
-            goalToArchive = activeProjectGoal
-            activeProjectGoal = nil
-        } else if let habitIndex = activeHabitGoals.firstIndex(where: { $0.id == goalId }) {
-            goalToArchive = activeHabitGoals.remove(at: habitIndex)
-        } else if activeIdentityGoal?.id == goalId {
-            goalToArchive = activeIdentityGoal
-            activeIdentityGoal = nil
-        }
+        var goalToArchive = activeProjectGoal
+        activeProjectGoal = nil
 
-        // Add to archived
         if var goal = goalToArchive {
             goal.status = .archived
             archivedGoals.append(goal)
@@ -700,9 +530,9 @@ class AppState: ObservableObject {
             }
         }
 
-        // Check identity task
-        if let identityTask = todaysIdentityTask, identityTask.id == id {
-            return identityTask
+        // Check today's tasks
+        if let task = todaysTasks.first(where: { $0.id == id }) {
+            return task
         }
 
         return nil
@@ -803,20 +633,9 @@ class AppState: ObservableObject {
 
             // Set goalType to project if not already set
             var migratedGoal = legacyGoal
-            if migratedGoal.goalType != .project && migratedGoal.goalType != .habit && migratedGoal.goalType != .identity {
-                // Default to project type for legacy goals
-                migratedGoal.goalType = .project
-            }
+            migratedGoal.goalType = .project
 
-            // Place in appropriate category based on type
-            switch migratedGoal.goalType {
-            case .project:
-                activeProjectGoal = migratedGoal
-            case .habit:
-                activeHabitGoals = [migratedGoal]
-            case .identity:
-                activeIdentityGoal = migratedGoal
-            }
+            activeProjectGoal = migratedGoal
 
             // Save in new format
             saveAllGoals()
@@ -832,18 +651,91 @@ class AppState: ObservableObject {
         // Clear all goal storage
         UserDefaults.standard.removeObject(forKey: "savedGoal")
         UserDefaults.standard.removeObject(forKey: "savedProjectGoal")
-        UserDefaults.standard.removeObject(forKey: "savedHabitGoals")
-        UserDefaults.standard.removeObject(forKey: "savedIdentityGoal")
         UserDefaults.standard.removeObject(forKey: "savedArchivedGoals")
         UserDefaults.standard.removeObject(forKey: "savedUser")
+        UserDefaults.standard.removeObject(forKey: "savedAIQuestions")
+        UserDefaults.standard.removeObject(forKey: "savedAIWorkItems")
 
         currentUser = nil
         activeProjectGoal = nil
-        activeHabitGoals = []
-        activeIdentityGoal = nil
         archivedGoals = []
         todaysTasks = []
-        todaysHabits = []
-        todaysIdentityTask = nil
+    }
+
+    // MARK: - AI Task Processor
+
+    /// AI processor for background work
+    let aiProcessor = AITaskProcessor()
+
+    /// Get pending AI questions for the active project
+    var pendingAIQuestions: [AIQuestion] {
+        guard let projectId = activeProjectGoal?.id else { return [] }
+        return aiProcessor.pendingQuestions(for: projectId)
+    }
+
+    /// Get completed AI work items for the active project
+    var completedAIWorkItems: [AIWorkItem] {
+        guard let projectId = activeProjectGoal?.id else { return [] }
+        return aiProcessor.completedWorkItems(for: projectId)
+    }
+
+    /// Submit an answer to an AI question
+    func submitAIAnswer(questionId: UUID, answer: String) {
+        aiProcessor.submitAnswer(for: questionId, answer: answer)
+        saveAIData()
+    }
+
+    /// Queue research for a topic
+    func queueAIResearch(title: String, taskId: UUID? = nil) {
+        guard let projectId = activeProjectGoal?.id else { return }
+        aiProcessor.queueResearch(title: title, goalId: projectId, taskId: taskId)
+    }
+
+    /// Queue a tool prompt generation
+    func queueAIToolPrompt(title: String, taskId: UUID? = nil) {
+        guard let projectId = activeProjectGoal?.id else { return }
+        aiProcessor.queueToolPrompt(title: title, goalId: projectId, taskId: taskId)
+    }
+
+    /// Process pending AI work for active project
+    func processAIWork() async {
+        guard let project = activeProjectGoal else { return }
+        await aiProcessor.processAllPendingWork(for: project)
+        saveAIData()
+    }
+
+    /// Trigger AI processing for a new task
+    func triggerAIProcessing(for task: MomentumTask) async {
+        guard let project = activeProjectGoal else { return }
+        await aiProcessor.processNewTask(task, goal: project)
+        saveAIData()
+    }
+
+    // MARK: - AI Data Persistence
+
+    private func saveAIData() {
+        // Save pending questions
+        if let encoded = try? JSONEncoder().encode(aiProcessor.pendingQuestions) {
+            UserDefaults.standard.set(encoded, forKey: "savedAIQuestions")
+        }
+
+        // Save work items
+        if let encoded = try? JSONEncoder().encode(aiProcessor.completedWorkItems) {
+            UserDefaults.standard.set(encoded, forKey: "savedAIWorkItems")
+        }
+    }
+
+    func loadAIData() {
+        // Load pending questions
+        if let data = UserDefaults.standard.data(forKey: "savedAIQuestions"),
+           let questions = try? JSONDecoder().decode([AIQuestion].self, from: data) {
+            aiProcessor.pendingQuestions = questions
+        }
+
+        // Load work items
+        if let data = UserDefaults.standard.data(forKey: "savedAIWorkItems"),
+           let items = try? JSONDecoder().decode([AIWorkItem].self, from: data) {
+            aiProcessor.completedWorkItems = items
+        }
     }
 }

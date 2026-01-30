@@ -222,7 +222,7 @@ struct PrimaryButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 16)
             .background(
-                RoundedRectangle(cornerRadius: MomentumRadius.small)
+                RoundedRectangle(cornerRadius: MomentumRadius.medium)
                     .fill(Color.momentumBlue)
             )
             .scaleEffect(configuration.isPressed ? 0.98 : 1.0)

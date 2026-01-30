@@ -20,10 +20,27 @@ struct HomeView: View {
         appState.weeklyPointsEarned
     }
 
+    // All tasks for today - pending first, then completed
+    private var allTodayTasks: [MomentumTask] {
+        appState.todaysTasks.sorted { task1, task2 in
+            let task1Completed = task1.status == .completed || completedTaskIds.contains(task1.id)
+            let task2Completed = task2.status == .completed || completedTaskIds.contains(task2.id)
+            // Pending tasks come first
+            if task1Completed != task2Completed {
+                return !task1Completed
+            }
+            return false
+        }
+    }
+
     private var pendingTasks: [MomentumTask] {
         appState.todaysTasks.filter { task in
             task.status != .completed && !completedTaskIds.contains(task.id)
         }
+    }
+
+    private func isTaskCompleted(_ task: MomentumTask) -> Bool {
+        task.status == .completed || completedTaskIds.contains(task.id)
     }
 
     private var todayPointsEarned: Int {
@@ -106,8 +123,9 @@ struct HomeView: View {
                         }
                     } else {
                         CardStackView(
-                            tasks: pendingTasks,
+                            tasks: allTodayTasks,
                             goalNameForTask: { goalName(for: $0) },
+                            isTaskCompleted: { isTaskCompleted($0) },
                             onComplete: { completeTask($0) },
                             onExpand: { task in expandedTask = task }
                         )
@@ -125,11 +143,16 @@ struct HomeView: View {
             appeared = true
         }
         .sheet(item: $expandedTask) { task in
+            let isTaskCompleted = task.status == .completed || completedTaskIds.contains(task.id)
             TaskExpandedView(
                 task: task,
                 goalName: goalName(for: task),
+                isCompleted: isTaskCompleted,
                 onComplete: {
                     completeTask(task)
+                },
+                onUndoComplete: {
+                    uncompleteTask(task)
                 }
             )
         }
@@ -141,13 +164,7 @@ struct HomeView: View {
         if let goal = appState.activeProjectGoal, goal.id == task.goalId {
             return goal.visionRefined ?? goal.visionText
         }
-        for habit in appState.activeHabitGoals where habit.id == task.goalId {
-            return habit.visionText
-        }
-        if let identity = appState.activeIdentityGoal, identity.id == task.goalId {
-            return identity.identityConfig?.identityStatement ?? identity.visionText
-        }
-        return "Goal"
+        return appState.activeProjectGoal?.visionRefined ?? appState.activeProjectGoal?.visionText ?? "Goal"
     }
 
     private func pointsForDifficulty(_ difficulty: TaskDifficulty) -> Int {
@@ -181,6 +198,13 @@ struct HomeView: View {
             }
         }
     }
+
+    private func uncompleteTask(_ task: MomentumTask) {
+        withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+            completedTaskIds.remove(task.id)
+        }
+        appState.uncompleteTask(task)
+    }
 }
 
 // MARK: - Card Stack View
@@ -188,6 +212,7 @@ struct HomeView: View {
 struct CardStackView: View {
     let tasks: [MomentumTask]
     let goalNameForTask: (MomentumTask) -> String
+    let isTaskCompleted: (MomentumTask) -> Bool
     let onComplete: (MomentumTask) -> Void
     let onExpand: (MomentumTask) -> Void
 
@@ -206,10 +231,12 @@ struct CardStackView: View {
                 ForEach(Array(tasks.enumerated()), id: \.element.id) { index, task in
                     let position = relativePosition(of: index)
                     let isFront = position == 0
+                    let taskIsCompleted = isTaskCompleted(task)
 
                     TaskCardView(
                         task: task,
                         goalName: goalNameForTask(task),
+                        isCompleted: taskIsCompleted,
                         onComplete: { onComplete(task) },
                         onExpand: { onExpand(task) },
                         onDragChanged: isFront ? { offset in

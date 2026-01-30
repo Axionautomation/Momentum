@@ -7,6 +7,18 @@
 
 import Foundation
 
+// MARK: - User Preferences
+
+struct UserPreferences: Codable {
+    var weeklyTimeMinutes: Int              // User's weekly time budget
+    var preferredSessionMinutes: Int        // Typical session length
+
+    init(weeklyTimeMinutes: Int = 300, preferredSessionMinutes: Int = 30) {
+        self.weeklyTimeMinutes = weeklyTimeMinutes
+        self.preferredSessionMinutes = preferredSessionMinutes
+    }
+}
+
 // MARK: - User Model
 struct MomentumUser: Identifiable, Codable {
     let id: UUID
@@ -18,6 +30,7 @@ struct MomentumUser: Identifiable, Codable {
     var streakCount: Int
     var longestStreak: Int
     var lastTaskCompletedAt: Date?
+    var preferences: UserPreferences?
 
     init(
         id: UUID = UUID(),
@@ -28,7 +41,8 @@ struct MomentumUser: Identifiable, Codable {
         aiPersonality: AIPersonality = .energetic,
         streakCount: Int = 0,
         longestStreak: Int = 0,
-        lastTaskCompletedAt: Date? = nil
+        lastTaskCompletedAt: Date? = nil,
+        preferences: UserPreferences? = nil
     ) {
         self.id = id
         self.email = email
@@ -39,6 +53,7 @@ struct MomentumUser: Identifiable, Codable {
         self.streakCount = streakCount
         self.longestStreak = longestStreak
         self.lastTaskCompletedAt = lastTaskCompletedAt
+        self.preferences = preferences
     }
 }
 
@@ -88,15 +103,12 @@ struct Goal: Identifiable, Codable {
     var visionText: String
     var visionRefined: String?
     var goalType: GoalType
-    var isIdentityBased: Bool                // Kept for backward compatibility
     var status: GoalStatus
     var createdAt: Date
     var targetCompletionDate: Date?
     var currentPowerGoalIndex: Int
     var completionPercentage: Double
     var powerGoals: [PowerGoal]
-    var habitConfig: HabitConfig?            // Only used for habit goals
-    var identityConfig: IdentityConfig?      // Only used for identity goals
 
     init(
         id: UUID = UUID(),
@@ -104,30 +116,24 @@ struct Goal: Identifiable, Codable {
         visionText: String,
         visionRefined: String? = nil,
         goalType: GoalType = .project,
-        isIdentityBased: Bool = false,
         status: GoalStatus = .active,
         createdAt: Date = Date(),
         targetCompletionDate: Date? = nil,
         currentPowerGoalIndex: Int = 0,
         completionPercentage: Double = 0,
-        powerGoals: [PowerGoal] = [],
-        habitConfig: HabitConfig? = nil,
-        identityConfig: IdentityConfig? = nil
+        powerGoals: [PowerGoal] = []
     ) {
         self.id = id
         self.userId = userId
         self.visionText = visionText
         self.visionRefined = visionRefined
         self.goalType = goalType
-        self.isIdentityBased = isIdentityBased
         self.status = status
         self.createdAt = createdAt
         self.targetCompletionDate = targetCompletionDate
         self.currentPowerGoalIndex = currentPowerGoalIndex
         self.completionPercentage = completionPercentage
         self.powerGoals = powerGoals
-        self.habitConfig = habitConfig
-        self.identityConfig = identityConfig
     }
 }
 
@@ -139,8 +145,6 @@ enum GoalStatus: String, Codable {
 
 enum GoalType: String, Codable {
     case project      // 12-month structured goal
-    case habit        // Ongoing lifestyle habit
-    case identity     // Identity-based with evidence collection
 }
 
 // MARK: - Power Goal Model (12 per Goal)
@@ -184,145 +188,6 @@ enum PowerGoalStatus: String, Codable {
     case completed
 }
 
-// MARK: - Habit Models
-
-enum HabitFrequency: String, Codable {
-    case daily
-    case weekdays
-    case weekends
-    case custom
-}
-
-struct HabitConfig: Codable {
-    var frequency: HabitFrequency
-    var customDays: [Int]?           // 0=Sunday, 6=Saturday (only used if frequency is custom)
-    var currentStreak: Int
-    var longestStreak: Int
-    var lastCompletedDate: Date?
-    var skipHistory: [Date]
-    var reminderTime: Date?
-    var weeklyGoal: Int?             // e.g., "Do this 5x per week"
-
-    init(
-        frequency: HabitFrequency = .daily,
-        customDays: [Int]? = nil,
-        currentStreak: Int = 0,
-        longestStreak: Int = 0,
-        lastCompletedDate: Date? = nil,
-        skipHistory: [Date] = [],
-        reminderTime: Date? = nil,
-        weeklyGoal: Int? = nil
-    ) {
-        self.frequency = frequency
-        self.customDays = customDays
-        self.currentStreak = currentStreak
-        self.longestStreak = longestStreak
-        self.lastCompletedDate = lastCompletedDate
-        self.skipHistory = skipHistory
-        self.reminderTime = reminderTime
-        self.weeklyGoal = weeklyGoal
-    }
-}
-
-struct HabitCheckIn: Identifiable, Codable {
-    let id: UUID
-    var habitGoalId: UUID
-    var scheduledDate: Date
-    var isCompleted: Bool
-    var completedAt: Date?
-    var notes: String?
-    var skipped: Bool
-
-    init(
-        id: UUID = UUID(),
-        habitGoalId: UUID,
-        scheduledDate: Date,
-        isCompleted: Bool = false,
-        completedAt: Date? = nil,
-        notes: String? = nil,
-        skipped: Bool = false
-    ) {
-        self.id = id
-        self.habitGoalId = habitGoalId
-        self.scheduledDate = scheduledDate
-        self.isCompleted = isCompleted
-        self.completedAt = completedAt
-        self.notes = notes
-        self.skipped = skipped
-    }
-}
-
-// MARK: - Identity Models
-
-enum EvidenceMood: String, Codable {
-    case struggled
-    case okay
-    case good
-    case great
-}
-
-struct EvidenceEntry: Identifiable, Codable {
-    let id: UUID
-    var date: Date
-    var description: String
-    var category: String?
-    var photoURL: String?
-    var mood: EvidenceMood
-
-    init(
-        id: UUID = UUID(),
-        date: Date = Date(),
-        description: String,
-        category: String? = nil,
-        photoURL: String? = nil,
-        mood: EvidenceMood = .good
-    ) {
-        self.id = id
-        self.date = date
-        self.description = description
-        self.category = category
-        self.photoURL = photoURL
-        self.mood = mood
-    }
-}
-
-struct IdentityMilestone: Identifiable, Codable {
-    let id: UUID
-    var title: String
-    var isCompleted: Bool
-    var completedDate: Date?
-    var evidenceId: UUID?            // Link to evidence entry that completed this
-
-    init(
-        id: UUID = UUID(),
-        title: String,
-        isCompleted: Bool = false,
-        completedDate: Date? = nil,
-        evidenceId: UUID? = nil
-    ) {
-        self.id = id
-        self.title = title
-        self.isCompleted = isCompleted
-        self.completedDate = completedDate
-        self.evidenceId = evidenceId
-    }
-}
-
-struct IdentityConfig: Codable {
-    var identityStatement: String    // "I am a piano player"
-    var evidenceEntries: [EvidenceEntry]
-    var milestones: [IdentityMilestone]
-
-    init(
-        identityStatement: String,
-        evidenceEntries: [EvidenceEntry] = [],
-        milestones: [IdentityMilestone] = []
-    ) {
-        self.identityStatement = identityStatement
-        self.evidenceEntries = evidenceEntries
-        self.milestones = milestones
-    }
-}
 
 // MARK: - Weekly Milestone Model (5 per Power Goal)
 struct WeeklyMilestone: Identifiable, Codable {
@@ -630,58 +495,6 @@ struct GeneratedTask: Codable {
     }
 }
 
-// MARK: - Habit AI Response Models
-struct AIGeneratedHabitPlan: Codable {
-    let visionRefined: String
-    let frequency: String
-    let habitDescription: String
-    let weeklyGoal: Int?
-    let milestones: [GeneratedHabitMilestone]
-
-    enum CodingKeys: String, CodingKey {
-        case visionRefined = "vision_refined"
-        case frequency
-        case habitDescription = "habit_description"
-        case weeklyGoal = "weekly_goal"
-        case milestones
-    }
-}
-
-struct GeneratedHabitMilestone: Codable {
-    let streak: Int
-    let title: String
-}
-
-// MARK: - Identity AI Response Models
-struct AIGeneratedIdentityPlan: Codable {
-    let visionRefined: String
-    let identityStatement: String
-    let isComplex: Bool
-    let evidenceCategories: [String]
-    let milestones: [GeneratedIdentityMilestone]
-    let dailyTaskDescription: String?
-
-    enum CodingKeys: String, CodingKey {
-        case visionRefined = "vision_refined"
-        case identityStatement = "identity_statement"
-        case isComplex = "is_complex"
-        case evidenceCategories = "evidence_categories"
-        case milestones
-        case dailyTaskDescription = "daily_task_description"
-    }
-}
-
-struct GeneratedIdentityMilestone: Codable {
-    let title: String
-    let category: String?
-}
-
-// MARK: - Unified AI Response
-enum AIGoalPlanResponse {
-    case project(AIGeneratedPlan)
-    case habit(AIGeneratedHabitPlan)
-    case identity(AIGeneratedIdentityPlan)
-}
 
 // MARK: - Task Notes & Knowledge Base
 
@@ -787,4 +600,150 @@ struct BrainstormNote: Identifiable, Codable, Equatable {
         self.createdAt = createdAt
         self.lastModified = lastModified
     }
+}
+
+// MARK: - AI Task System Models
+
+/// How a task should be completed
+enum TaskCompletionType: String, Codable {
+    case manual           // User does it themselves
+    case aiAssisted       // AI helps, user completes
+    case requiresInput    // Needs user decision via Process page
+    case aiAutonomous     // AI can complete entirely
+}
+
+/// AI-generated questions for user decisions
+struct AIQuestion: Identifiable, Codable {
+    let id: UUID
+    let taskId: UUID?
+    let goalId: UUID
+    let question: String
+    let options: [QuestionOption]
+    let allowsCustomInput: Bool
+    var answer: String?
+    var answeredAt: Date?
+    let createdAt: Date
+    let priority: QuestionPriority
+
+    init(
+        id: UUID = UUID(),
+        taskId: UUID? = nil,
+        goalId: UUID,
+        question: String,
+        options: [QuestionOption],
+        allowsCustomInput: Bool = true,
+        answer: String? = nil,
+        answeredAt: Date? = nil,
+        createdAt: Date = Date(),
+        priority: QuestionPriority = .important
+    ) {
+        self.id = id
+        self.taskId = taskId
+        self.goalId = goalId
+        self.question = question
+        self.options = options
+        self.allowsCustomInput = allowsCustomInput
+        self.answer = answer
+        self.answeredAt = answeredAt
+        self.createdAt = createdAt
+        self.priority = priority
+    }
+}
+
+struct QuestionOption: Identifiable, Codable {
+    let id: UUID
+    let label: String
+    let description: String?
+
+    init(id: UUID = UUID(), label: String, description: String? = nil) {
+        self.id = id
+        self.label = label
+        self.description = description
+    }
+}
+
+enum QuestionPriority: String, Codable {
+    case blocking  // Blocks task progress
+    case important // Should answer soon
+    case optional  // Nice to have input
+}
+
+/// AI work items (research, reports, prompts)
+struct AIWorkItem: Identifiable, Codable {
+    let id: UUID
+    let goalId: UUID
+    let taskId: UUID?
+    let type: AIWorkType
+    let title: String
+    var status: AIWorkStatus
+    var result: AIWorkResult?
+    let createdAt: Date
+    var completedAt: Date?
+
+    init(
+        id: UUID = UUID(),
+        goalId: UUID,
+        taskId: UUID? = nil,
+        type: AIWorkType,
+        title: String,
+        status: AIWorkStatus = .pending,
+        result: AIWorkResult? = nil,
+        createdAt: Date = Date(),
+        completedAt: Date? = nil
+    ) {
+        self.id = id
+        self.goalId = goalId
+        self.taskId = taskId
+        self.type = type
+        self.title = title
+        self.status = status
+        self.result = result
+        self.createdAt = createdAt
+        self.completedAt = completedAt
+    }
+}
+
+enum AIWorkType: String, Codable {
+    case research
+    case report
+    case toolPrompt
+    case ideaGeneration
+}
+
+enum AIWorkStatus: String, Codable {
+    case pending
+    case inProgress
+    case completed
+    case failed
+}
+
+struct AIWorkResult: Codable {
+    let summary: String           // Always shown
+    let details: String?          // Expandable
+    let sources: [String]?        // For research
+    let toolName: String?         // For tool prompts
+    let prompt: String?           // Copy-paste prompt
+
+    init(
+        summary: String,
+        details: String? = nil,
+        sources: [String]? = nil,
+        toolName: String? = nil,
+        prompt: String? = nil
+    ) {
+        self.summary = summary
+        self.details = details
+        self.sources = sources
+        self.toolName = toolName
+        self.prompt = prompt
+    }
+}
+
+/// Analysis of what AI can do for a task
+struct TaskAIAnalysis: Codable {
+    let completionType: TaskCompletionType
+    let aiCanDo: [String]           // What AI will handle
+    let userMustDo: [String]        // What user must do
+    let questionsNeeded: [AIQuestion]  // Decisions to ask
+    let researchNeeded: [String]    // Topics to research
 }

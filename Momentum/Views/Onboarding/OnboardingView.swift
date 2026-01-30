@@ -23,28 +23,12 @@ struct OnboardingView: View {
                 case .welcome:
                     WelcomeView(onContinue: {
                         withAnimation(.easeInOut(duration: 0.3)) {
-                            viewModel.currentStep = .goalTypeSelection
+                            viewModel.currentStep = .visionInput
                         }
                     })
 
-                case .goalTypeSelection:
-                    GoalTypeSelectionView(
-                        selectedType: $viewModel.selectedGoalType,
-                        onContinue: {
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                viewModel.currentStep = .visionInput
-                            }
-                        },
-                        onBack: {
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                viewModel.currentStep = .welcome
-                            }
-                        }
-                    )
-
                 case .visionInput:
                     VisionInputView(
-                        goalType: viewModel.selectedGoalType,
                         visionText: $viewModel.answers.visionText,
                         onContinue: {
                             Task {
@@ -53,7 +37,7 @@ struct OnboardingView: View {
                         },
                         onBack: {
                             withAnimation(.easeInOut(duration: 0.3)) {
-                                viewModel.currentStep = .goalTypeSelection
+                                viewModel.currentStep = .welcome
                             }
                         }
                     )
@@ -82,13 +66,12 @@ struct OnboardingView: View {
                     )
 
                 case .generating:
-                    GeneratingPlanView(goalType: viewModel.selectedGoalType)
+                    GeneratingPlanView()
 
                 case .planPreview:
-                    if let planResponse = viewModel.generatedPlan {
+                    if let plan = viewModel.generatedPlan {
                         PlanPreviewView(
-                            goalType: viewModel.selectedGoalType,
-                            planResponse: planResponse,
+                            plan: plan,
                             onConfirm: {
                                 viewModel.completeOnboarding(appState: appState)
                             },
@@ -119,11 +102,10 @@ struct OnboardingView: View {
 @MainActor
 class OnboardingViewModel: ObservableObject {
     @Published var currentStep: OnboardingStep = .welcome
-    @Published var selectedGoalType: GoalType = .project
     @Published var answers = OnboardingAnswers()
     @Published var questions: [OnboardingQuestion] = []
     @Published var currentQuestionIndex = 0
-    @Published var generatedPlan: AIGoalPlanResponse?
+    @Published var generatedPlan: AIGeneratedPlan?
     @Published var showError = false
     @Published var errorMessage = ""
 
@@ -131,7 +113,6 @@ class OnboardingViewModel: ObservableObject {
 
     enum OnboardingStep {
         case welcome
-        case goalTypeSelection
         case visionInput
         case questions
         case generating
@@ -165,9 +146,8 @@ class OnboardingViewModel: ObservableObject {
             }
 
             // Add a minimum display time for loading animation
-            async let planTask = groqService.generateGoalPlan(
+            async let planTask = groqService.generateProjectPlan(
                 visionText: answers.visionText,
-                goalType: selectedGoalType,
                 answers: answers
             )
 
@@ -190,29 +170,15 @@ class OnboardingViewModel: ObservableObject {
     }
 
     func completeOnboarding(appState: AppState) {
-        guard let planResponse = generatedPlan else { return }
+        guard let aiPlan = generatedPlan else { return }
 
         let userId = UUID()
-
-        // Create goal based on type
-        let goal: Goal
-
-        switch planResponse {
-        case .project(let aiPlan):
-            goal = convertToGoal(aiPlan: aiPlan, userId: userId, goalType: .project)
-
-        case .habit(let habitPlan):
-            goal = convertToGoal(habitPlan: habitPlan, userId: userId)
-
-        case .identity(let identityPlan):
-            goal = convertToGoal(identityPlan: identityPlan, userId: userId)
-        }
-
+        let goal = convertToGoal(aiPlan: aiPlan, userId: userId)
         appState.completeOnboarding(with: goal)
     }
 
     // Convert AIGeneratedPlan to Goal
-    private func convertToGoal(aiPlan: AIGeneratedPlan, userId: UUID, goalType: GoalType) -> Goal {
+    private func convertToGoal(aiPlan: AIGeneratedPlan, userId: UUID) -> Goal {
         let goalId = UUID()
         let today = Date()
 
@@ -295,81 +261,13 @@ class OnboardingViewModel: ObservableObject {
             userId: userId,
             visionText: answers.visionText,
             visionRefined: aiPlan.visionRefined,
-            goalType: goalType,
-            isIdentityBased: false,
+            goalType: .project,
             status: .active,
             createdAt: Date(),
             targetCompletionDate: Calendar.current.date(byAdding: .year, value: 1, to: Date()),
             currentPowerGoalIndex: 0,
             completionPercentage: 0,
             powerGoals: powerGoals
-        )
-    }
-
-    // Convert habit plan to Goal
-    private func convertToGoal(habitPlan: AIGeneratedHabitPlan, userId: UUID) -> Goal {
-        let goalId = UUID()
-
-        // Convert string frequency to enum
-        let frequencyEnum: HabitFrequency = {
-            switch habitPlan.frequency.lowercased() {
-            case "daily": return .daily
-            case "weekdays": return .weekdays
-            case "weekends": return .weekends
-            default: return .daily
-            }
-        }()
-
-        let habitConfig = HabitConfig(
-            frequency: frequencyEnum,
-            customDays: nil,
-            currentStreak: 0,
-            longestStreak: 0,
-            lastCompletedDate: nil,
-            skipHistory: [],
-            reminderTime: nil,
-            weeklyGoal: habitPlan.weeklyGoal
-        )
-
-        return Goal(
-            id: goalId,
-            userId: userId,
-            visionText: answers.visionText,
-            visionRefined: habitPlan.habitDescription,
-            goalType: .habit,
-            status: .active,
-            createdAt: Date(),
-            habitConfig: habitConfig
-        )
-    }
-
-    // Convert identity plan to Goal
-    private func convertToGoal(identityPlan: AIGeneratedIdentityPlan, userId: UUID) -> Goal {
-        let goalId = UUID()
-
-        let milestones = identityPlan.milestones.map { generatedMilestone in
-            IdentityMilestone(
-                id: UUID(),
-                title: generatedMilestone.title,
-                isCompleted: false
-            )
-        }
-
-        let identityConfig = IdentityConfig(
-            identityStatement: identityPlan.identityStatement,
-            evidenceEntries: [],
-            milestones: milestones
-        )
-
-        return Goal(
-            id: goalId,
-            userId: userId,
-            visionText: answers.visionText,
-            visionRefined: identityPlan.visionRefined,
-            goalType: .identity,
-            status: .active,
-            createdAt: Date(),
-            identityConfig: identityConfig
         )
     }
 }
@@ -446,213 +344,23 @@ struct WelcomeView: View {
     }
 }
 
-// MARK: - Goal Type Selection View
-
-struct GoalTypeSelectionView: View {
-    @Binding var selectedType: GoalType
-    let onContinue: () -> Void
-    let onBack: () -> Void
-
-    var body: some View {
-        VStack(spacing: 0) {
-            // Header
-            HStack {
-                Button(action: onBack) {
-                    HStack(spacing: 4) {
-                        Ph.caretLeft.regular
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 20, height: 20)
-                        Text("Back")
-                            .font(MomentumFont.bodyMedium())
-                    }
-                    .foregroundColor(.momentumBlue)
-                }
-
-                Spacer()
-            }
-            .padding(.horizontal, MomentumSpacing.standard)
-            .padding(.top, MomentumSpacing.standard)
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: MomentumSpacing.section) {
-                    // Title
-                    VStack(alignment: .leading, spacing: MomentumSpacing.tight) {
-                        Text("Choose Your Path")
-                            .font(MomentumFont.display(28))
-                            .foregroundColor(.momentumTextPrimary)
-
-                        Text("Select the type of goal you want to achieve")
-                            .font(MomentumFont.body(17))
-                            .foregroundColor(.momentumTextSecondary)
-                    }
-                    .padding(.horizontal, MomentumSpacing.standard)
-                    .padding(.top, MomentumSpacing.comfortable)
-
-                    // Goal Type Cards
-                    VStack(spacing: MomentumSpacing.standard) {
-                        GoalTypeCard(
-                            icon: Ph.target.fill,
-                            title: "Project Goal",
-                            description: "Achieve a specific outcome with a structured 12-month plan",
-                            examples: ["Launch a business", "Learn a new skill", "Complete a certification"],
-                            isSelected: selectedType == .project,
-                            action: { selectedType = .project }
-                        )
-
-                        GoalTypeCard(
-                            icon: Ph.repeat.fill,
-                            title: "Habit Goal",
-                            description: "Build lasting lifestyle habits through consistent daily action",
-                            examples: ["Exercise daily", "Read for 30 minutes", "Practice meditation"],
-                            isSelected: selectedType == .habit,
-                            action: { selectedType = .habit }
-                        )
-
-                        GoalTypeCard(
-                            icon: Ph.userCircle.fill,
-                            title: "Identity Goal",
-                            description: "Become the person you aspire to be by collecting evidence",
-                            examples: ["Become a leader", "Be more confident", "Develop creativity"],
-                            isSelected: selectedType == .identity,
-                            action: { selectedType = .identity }
-                        )
-                    }
-                    .padding(.horizontal, MomentumSpacing.standard)
-                }
-                .padding(.bottom, MomentumSpacing.large)
-            }
-
-            // Continue Button
-            Button(action: {
-                SoundManager.shared.lightHaptic()
-                onContinue()
-            }) {
-                HStack(spacing: MomentumSpacing.tight) {
-                    Text("Continue")
-                    Ph.arrowRight.regular
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 20, height: 20)
-                }
-            }
-            .buttonStyle(PrimaryButtonStyle())
-            .padding(.horizontal, MomentumSpacing.standard)
-            .padding(.bottom, MomentumSpacing.large)
-        }
-    }
-}
-
-struct GoalTypeCard: View {
-    let icon: Image
-    let title: String
-    let description: String
-    let examples: [String]
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: MomentumSpacing.tight) {
-                HStack(spacing: MomentumSpacing.compact) {
-                    icon
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 24, height: 24)
-                        .foregroundStyle(isSelected ? MomentumGradients.primary : LinearGradient(colors: [.momentumTextSecondary], startPoint: .leading, endPoint: .trailing))
-
-                    Text(title)
-                        .font(MomentumFont.headingMedium(18))
-                        .foregroundColor(isSelected ? .momentumBlue : .momentumTextPrimary)
-
-                    Spacer()
-
-                    if isSelected {
-                        Ph.checkCircle.fill
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 20, height: 20)
-                            .foregroundStyle(MomentumGradients.primary)
-                    }
-                }
-
-                Text(description)
-                    .font(MomentumFont.body(14))
-                    .foregroundColor(.momentumTextSecondary)
-                    .multilineTextAlignment(.leading)
-                    .lineLimit(2)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Examples:")
-                        .font(MomentumFont.label(12))
-                        .foregroundColor(.momentumTextTertiary)
-
-                    ForEach(examples, id: \.self) { example in
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(Color.momentumTextTertiary)
-                                .frame(width: 3, height: 3)
-
-                            Text(example)
-                                .font(MomentumFont.body(13))
-                                .foregroundColor(.momentumTextSecondary)
-                        }
-                    }
-                }
-            }
-            .padding(MomentumSpacing.compact)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .momentumCard(highlighted: isSelected)
-    }
-}
-
 // MARK: - Vision Input View
 
 struct VisionInputView: View {
-    let goalType: GoalType
     @Binding var visionText: String
     let onContinue: () -> Void
     let onBack: () -> Void
 
     @FocusState private var isTextFieldFocused: Bool
 
-    private var exampleVisions: [String] {
-        switch goalType {
-        case .project:
-            return [
-                "Launch a 6-figure SaaS product",
-                "Get promoted to senior engineer",
-                "Build and monetize a content brand",
-                "Write and publish my first book"
-            ]
-        case .habit:
-            return [
-                "Exercise 5 days a week",
-                "Read for 30 minutes daily",
-                "Practice meditation every morning",
-                "Learn a new language consistently"
-            ]
-        case .identity:
-            return [
-                "Become a confident public speaker",
-                "Develop as a creative thinker",
-                "Embody a leadership mindset",
-                "Be someone who inspires others"
-            ]
-        }
-    }
+    private let exampleVisions = [
+        "Launch a 6-figure SaaS product",
+        "Get promoted to senior engineer",
+        "Build and monetize a content brand",
+        "Write and publish my first book"
+    ]
 
-    private var promptText: String {
-        switch goalType {
-        case .project:
-            return "What specific outcome do you want to achieve?"
-        case .habit:
-            return "What habit do you want to build into your lifestyle?"
-        case .identity:
-            return "Who do you want to become?"
-        }
-    }
+    private let promptText = "What do you want to achieve?"
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1017,7 +725,6 @@ struct QuestionsView: View {
 // MARK: - Generating Plan View
 
 struct GeneratingPlanView: View {
-    let goalType: GoalType
     @State private var currentQuoteIndex = 0
     @State private var timer: Timer?
 
@@ -1131,8 +838,7 @@ struct GeneratingPlanView: View {
 // MARK: - Plan Preview View
 
 struct PlanPreviewView: View {
-    let goalType: GoalType
-    let planResponse: AIGoalPlanResponse
+    let plan: AIGeneratedPlan
     let onConfirm: () -> Void
     let onBack: () -> Void
 
@@ -1205,16 +911,7 @@ struct PlanPreviewView: View {
                     }
 
                     // Plan Content
-                    switch planResponse {
-                    case .project(let plan):
-                        ProjectPlanPreview(plan: plan)
-
-                    case .habit(let plan):
-                        HabitPlanPreview(plan: plan)
-
-                    case .identity(let plan):
-                        IdentityPlanPreview(plan: plan)
-                    }
+                    ProjectPlanPreview(plan: plan)
                 }
                 .padding(.horizontal, MomentumSpacing.standard)
                 .padding(.bottom, MomentumSpacing.large)
@@ -1327,177 +1024,7 @@ struct ProjectPlanPreview: View {
     }
 }
 
-// MARK: - Habit Plan Preview
-
-struct HabitPlanPreview: View {
-    let plan: AIGeneratedHabitPlan
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: MomentumSpacing.standard) {
-            // Habit Description
-            VStack(alignment: .leading, spacing: MomentumSpacing.tight) {
-                HStack(spacing: 6) {
-                    Ph.repeat.fill
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 18, height: 18)
-                        .foregroundColor(.momentumBlue)
-
-                    Text("Your Habit")
-                        .font(MomentumFont.headingMedium(17))
-                        .foregroundColor(.momentumTextPrimary)
-                }
-
-                Text(plan.habitDescription)
-                    .font(MomentumFont.body(16))
-                    .foregroundColor(.momentumTextSecondary)
-                    .padding(MomentumSpacing.standard)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.momentumBackgroundSecondary)
-                    .clipShape(RoundedRectangle(cornerRadius: MomentumRadius.medium))
-            }
-
-            // Frequency
-            HStack(spacing: MomentumSpacing.standard) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Frequency")
-                        .font(MomentumFont.label(13))
-                        .foregroundColor(.momentumTextTertiary)
-
-                    Text(plan.frequency.capitalized)
-                        .font(MomentumFont.bodyMedium(18))
-                        .foregroundColor(.momentumTextPrimary)
-                }
-
-                Spacer()
-
-                if let weeklyGoal = plan.weeklyGoal {
-                    VStack(alignment: .trailing, spacing: 4) {
-                        Text("Weekly Goal")
-                            .font(MomentumFont.label(13))
-                            .foregroundColor(.momentumTextTertiary)
-
-                        Text("\(weeklyGoal)x per week")
-                            .font(MomentumFont.bodyMedium(18))
-                            .foregroundColor(.momentumTextPrimary)
-                    }
-                }
-            }
-            .padding(MomentumSpacing.standard)
-            .background(Color.momentumBackgroundSecondary)
-            .clipShape(RoundedRectangle(cornerRadius: MomentumRadius.medium))
-        }
-    }
-}
-
-// MARK: - Identity Plan Preview
-
-struct IdentityPlanPreview: View {
-    let plan: AIGeneratedIdentityPlan
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: MomentumSpacing.standard) {
-            // Identity Statement
-            VStack(alignment: .leading, spacing: MomentumSpacing.tight) {
-                HStack(spacing: 6) {
-                    Ph.userCircle.fill
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 18, height: 18)
-                        .foregroundColor(.momentumBlue)
-
-                    Text("Your Identity")
-                        .font(MomentumFont.headingMedium(17))
-                        .foregroundColor(.momentumTextPrimary)
-                }
-
-                Text(plan.identityStatement)
-                    .font(MomentumFont.bodyMedium(18))
-                    .foregroundColor(.momentumTextPrimary)
-                    .padding(MomentumSpacing.standard)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        LinearGradient(
-                            colors: [Color.momentumBlue.opacity(0.1), Color.momentumBlue.opacity(0.05)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: MomentumRadius.medium))
-            }
-
-            // Evidence Categories
-            VStack(alignment: .leading, spacing: MomentumSpacing.tight) {
-                HStack(spacing: 6) {
-                    Ph.heart.fill
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 18, height: 18)
-                        .foregroundColor(.momentumBlue)
-
-                    Text("Evidence Categories")
-                        .font(MomentumFont.headingMedium(17))
-                        .foregroundColor(.momentumTextPrimary)
-                }
-
-                FlowLayout(spacing: MomentumSpacing.tight) {
-                    ForEach(plan.evidenceCategories, id: \.self) { category in
-                        Text(category)
-                            .font(MomentumFont.body(14))
-                            .foregroundColor(.momentumBlue)
-                            .padding(.horizontal, MomentumSpacing.compact)
-                            .padding(.vertical, MomentumSpacing.tight)
-                            .background(Color.momentumBlue.opacity(0.1))
-                            .clipShape(RoundedRectangle(cornerRadius: MomentumRadius.small))
-                    }
-                }
-            }
-
-            // Milestones
-            VStack(alignment: .leading, spacing: MomentumSpacing.tight) {
-                HStack(spacing: 6) {
-                    Ph.flagCheckered.fill
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 18, height: 18)
-                        .foregroundColor(.momentumBlue)
-
-                    Text("Identity Milestones")
-                        .font(MomentumFont.headingMedium(17))
-                        .foregroundColor(.momentumTextPrimary)
-                }
-
-                ForEach(Array(plan.milestones.prefix(3).enumerated()), id: \.element.title) { index, milestone in
-                    HStack(alignment: .top, spacing: MomentumSpacing.compact) {
-                        Ph.checkCircle.regular
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 16, height: 16)
-                            .foregroundColor(.momentumTextTertiary)
-
-                        Text(milestone.title)
-                            .font(MomentumFont.bodyMedium(15))
-                            .foregroundColor(.momentumTextPrimary)
-
-                        Spacer()
-                    }
-                    .padding(MomentumSpacing.compact)
-                    .background(Color.momentumBackgroundSecondary)
-                    .clipShape(RoundedRectangle(cornerRadius: MomentumRadius.small))
-                }
-
-                if plan.milestones.count > 3 {
-                    Text("+ \(plan.milestones.count - 3) more milestones")
-                        .font(MomentumFont.label(14))
-                        .foregroundColor(.momentumTextTertiary)
-                        .padding(.leading, MomentumSpacing.large)
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Flow Layout (for Core Values tags)
+// MARK: - Flow Layout (for tags)
 
 struct FlowLayout: Layout {
     var spacing: CGFloat = 8

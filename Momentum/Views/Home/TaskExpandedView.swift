@@ -11,13 +11,15 @@ import PhosphorSwift
 struct TaskExpandedView: View {
     @State var task: MomentumTask
     let goalName: String
+    let isCompleted: Bool
     let onComplete: () -> Void
+    var onUndoComplete: (() -> Void)? = nil
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var appState: AppState
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            Color.momentumDarkBackground
+            Color.white
                 .ignoresSafeArea()
 
             ScrollView {
@@ -56,7 +58,6 @@ struct TaskExpandedView: View {
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
-        .preferredColorScheme(.dark)
     }
 
     // MARK: - Header Bar
@@ -81,7 +82,7 @@ struct TaskExpandedView: View {
                     .frame(width: 18, height: 18)
                     .foregroundColor(.momentumTextSecondary)
                     .padding(8)
-                    .background(Color.momentumSurfaceSecondary)
+                    .background(Color.momentumBackgroundSecondary)
                     .clipShape(Circle())
             }
         }
@@ -133,7 +134,7 @@ struct TaskExpandedView: View {
                             ZStack {
                                 RoundedRectangle(cornerRadius: 6)
                                     .stroke(
-                                        step.isCompleted ? Color.momentumSuccess : Color.momentumTextTertiary,
+                                        step.isCompleted ? Color.momentumSuccess : Color.momentumCardBorder,
                                         lineWidth: 1.5
                                     )
                                     .frame(width: 22, height: 22)
@@ -162,13 +163,13 @@ struct TaskExpandedView: View {
 
                     if index < task.microsteps.count - 1 {
                         Divider()
-                            .background(Color.momentumTextTertiary.opacity(0.3))
+                            .background(Color.momentumCardBorder)
                     }
                 }
             }
             .padding(.horizontal, MomentumSpacing.standard)
             .padding(.vertical, MomentumSpacing.tight)
-            .background(Color.momentumSurfacePrimary)
+            .background(Color.momentumBackgroundSecondary)
             .cornerRadius(16)
         }
     }
@@ -206,7 +207,7 @@ struct TaskExpandedView: View {
                     }
                     .padding(MomentumSpacing.compact)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.momentumSurfaceSecondary)
+                    .background(Color.momentumBackgroundSecondary)
                     .cornerRadius(12)
                 }
 
@@ -224,7 +225,7 @@ struct TaskExpandedView: View {
                     }
                     .padding(MomentumSpacing.compact)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.momentumSurfaceSecondary)
+                    .background(Color.momentumBackgroundSecondary)
                     .cornerRadius(12)
                 }
 
@@ -241,7 +242,7 @@ struct TaskExpandedView: View {
                 }
             }
             .padding(MomentumSpacing.standard)
-            .background(Color.momentumSurfacePrimary)
+            .background(Color.momentumBackgroundSecondary)
             .cornerRadius(16)
         }
     }
@@ -252,31 +253,58 @@ struct TaskExpandedView: View {
         VStack(spacing: 0) {
             // Fade gradient above button
             LinearGradient(
-                colors: [Color.momentumDarkBackground.opacity(0), Color.momentumDarkBackground],
+                colors: [Color.white.opacity(0), Color.white],
                 startPoint: .top,
                 endPoint: .bottom
             )
             .frame(height: 32)
 
-            Button {
-                onComplete()
-                dismiss()
-            } label: {
-                HStack(spacing: 8) {
-                    Ph.checkCircle.fill
-                        .frame(width: 20, height: 20)
-                    Text("Mark Complete")
-                        .font(MomentumFont.bodyMedium())
+            if isCompleted {
+                // Undo completion button for completed tasks
+                Button {
+                    onUndoComplete?()
+                    dismiss()
+                } label: {
+                    HStack(spacing: 8) {
+                        Ph.arrowCounterClockwise.bold
+                            .frame(width: 20, height: 20)
+                        Text("Undo Completion")
+                            .font(MomentumFont.bodyMedium())
+                    }
+                    .foregroundColor(.momentumBlue)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, MomentumSpacing.standard)
+                    .background(Color.momentumBlue.opacity(0.1))
+                    .cornerRadius(16)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .strokeBorder(Color.momentumBlue.opacity(0.3), lineWidth: 1)
+                    )
                 }
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, MomentumSpacing.standard)
-                .background(MomentumGradients.primary)
-                .cornerRadius(16)
+                .padding(.horizontal, MomentumSpacing.comfortable)
+                .padding(.bottom, MomentumSpacing.section)
+                .background(Color.white)
+            } else {
+                Button {
+                    onComplete()
+                    dismiss()
+                } label: {
+                    HStack(spacing: 8) {
+                        Ph.checkCircle.fill
+                            .frame(width: 20, height: 20)
+                        Text("Mark Complete")
+                            .font(MomentumFont.bodyMedium())
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, MomentumSpacing.standard)
+                    .background(MomentumGradients.primary)
+                    .cornerRadius(16)
+                }
+                .padding(.horizontal, MomentumSpacing.comfortable)
+                .padding(.bottom, MomentumSpacing.section)
+                .background(Color.white)
             }
-            .padding(.horizontal, MomentumSpacing.comfortable)
-            .padding(.bottom, MomentumSpacing.section)
-            .background(Color.momentumDarkBackground)
         }
     }
 

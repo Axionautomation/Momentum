@@ -22,8 +22,8 @@ struct MainTabView: View {
                 switch appState.selectedTab {
                 case .home:
                     HomeView()
-                case .progress:
-                    ProgressTabView()
+                case .process:
+                    ProcessView()
                 case .mindset:
                     MindsetView()
                 case .profile:
@@ -98,8 +98,8 @@ struct FloatingTabBar: View {
         switch tab.icon {
         case "house":
             return Ph.house.bold
-        case "chart":
-            return Ph.chartLineUp.bold
+        case "squares":
+            return Ph.squaresFour.bold
         case "brain":
             return Ph.brain.bold
         case "user":

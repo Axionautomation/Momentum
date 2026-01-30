@@ -71,7 +71,7 @@ class GroqService: ObservableObject {
         func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
             if let transaction = metrics.transactionMetrics.first {
                 let protocolName = transaction.networkProtocolName ?? "unknown"
-                let duration = String(format: "%.2f", transaction.fetchEndDate?.timeIntervalSince(transaction.fetchStartDate ?? Date()) ?? 0)
+                let duration = String(format: "%.2f", transaction.responseEndDate?.timeIntervalSince(transaction.fetchStartDate ?? Date()) ?? 0)
                 print("🌐 Protocol: \(protocolName) | Duration: \(duration)s")
             }
         }
@@ -335,29 +335,9 @@ class GroqService: ObservableObject {
         }
     }
 
-    // MARK: - Generate Complete Goal Plan
-
-    func generateGoalPlan(
-        visionText: String,
-        goalType: GoalType = .project,
-        answers: OnboardingAnswers
-    ) async throws -> AIGoalPlanResponse {
-        switch goalType {
-        case .project:
-            let plan = try await generateProjectPlan(visionText: visionText, answers: answers)
-            return .project(plan)
-        case .habit:
-            let plan = try await generateHabitPlan(visionText: visionText, answers: answers)
-            return .habit(plan)
-        case .identity:
-            let plan = try await generateIdentityPlan(visionText: visionText, answers: answers)
-            return .identity(plan)
-        }
-    }
-
     // MARK: - Project Plan Generation
 
-    private func generateProjectPlan(
+    func generateProjectPlan(
         visionText: String,
         answers: OnboardingAnswers
     ) async throws -> AIGeneratedPlan {
@@ -502,137 +482,6 @@ class GroqService: ObservableObject {
             print("Decoding error: \(error)")
             print("Original response: \(responseText)")
             print("Cleaned response: \(cleanedJSON)")
-            throw GroqError.decodingError(error.localizedDescription)
-        }
-    }
-
-    // MARK: - Habit Plan Generation
-
-    private func generateHabitPlan(
-        visionText: String,
-        answers: OnboardingAnswers
-    ) async throws -> AIGeneratedHabitPlan {
-        let systemPrompt = """
-        You are Momentum's AI coach. Generate a simple, focused habit-building plan.
-
-        A habit goal is a SINGLE recurring action done daily (or on a schedule). Examples:
-        - "Meditate 10 minutes daily"
-        - "Read for 30 minutes every evening"
-        - "Practice piano 30 minutes daily"
-
-        Return ONLY valid JSON in this EXACT format:
-        {
-          "vision_refined": "Clear, specific habit description",
-          "frequency": "daily" | "weekdays" | "weekends",
-          "habit_description": "What exactly to do and when",
-          "weekly_goal": 7,
-          "milestones": [
-            {"streak": 7, "title": "First Week Complete"},
-            {"streak": 30, "title": "One Month Strong"},
-            {"streak": 100, "title": "100 Day Champion"}
-          ]
-        }
-
-        Keep it simple and achievable. Focus on consistency over complexity.
-        """
-
-        let userPrompt = """
-        USER'S HABIT VISION: "\(visionText)"
-
-        USER CONTEXT:
-        - Experience Level: \(answers.experienceLevel.isEmpty ? "Beginner" : answers.experienceLevel)
-        - Weekly Time Available: \(answers.weeklyHours.isEmpty ? "30 minutes daily" : answers.weeklyHours)
-
-        Generate a habit plan focused on building consistency with this specific habit.
-        """
-
-        let responseText = try await makeRequest(
-            systemPrompt: systemPrompt,
-            userPrompt: userPrompt,
-            temperature: 0.7,
-            maxTokens: 800,
-            requireJSON: true
-        )
-
-        guard let data = responseText.data(using: .utf8) else {
-            throw GroqError.decodingError("Could not convert response to data")
-        }
-
-        do {
-            let decoder = JSONDecoder()
-            let plan = try decoder.decode(AIGeneratedHabitPlan.self, from: data)
-            return plan
-        } catch {
-            print("Decoding error: \(error)")
-            print("Response: \(responseText)")
-            throw GroqError.decodingError(error.localizedDescription)
-        }
-    }
-
-    // MARK: - Identity Plan Generation
-
-    private func generateIdentityPlan(
-        visionText: String,
-        answers: OnboardingAnswers
-    ) async throws -> AIGeneratedIdentityPlan {
-        let systemPrompt = """
-        You are Momentum's AI coach. Generate an identity-based goal plan.
-
-        Identity goals are about BECOMING someone, not just achieving something.
-
-        COMPLEXITY DETECTION:
-        - SIMPLE (is_complex: false): Single recurring action to embody the identity
-          Examples: "Become a reader" (read daily), "Become a pianist" (practice daily)
-        - COMPLEX (is_complex: true): Multi-faceted identity requiring various actions
-          Examples: "Become an entrepreneur" (needs product, marketing, sales, etc.)
-
-        Return ONLY valid JSON in this EXACT format:
-        {
-          "vision_refined": "Clear identity goal",
-          "identity_statement": "I am a [identity]",
-          "is_complex": true | false,
-          "evidence_categories": ["Practice", "Performance", "Learning"],
-          "milestones": [
-            {"title": "First public performance", "category": "Performance"},
-            {"title": "10 hours of practice", "category": "Practice"}
-          ],
-          "daily_task_description": "What to do daily to build this identity"
-        }
-
-        For SIMPLE identities, focus on the daily evidence collection.
-        For COMPLEX identities, suggest varied evidence categories.
-        """
-
-        let userPrompt = """
-        USER'S IDENTITY VISION: "\(visionText)"
-
-        USER CONTEXT:
-        - Experience Level: \(answers.experienceLevel.isEmpty ? "Beginner" : answers.experienceLevel)
-        - Passions: \(answers.passions.isEmpty ? "Not specified" : answers.passions)
-        - What this identity means to them: \(answers.identityMeaning.isEmpty ? "Not specified" : answers.identityMeaning)
-
-        Generate an identity plan with appropriate complexity level.
-        """
-
-        let responseText = try await makeRequest(
-            systemPrompt: systemPrompt,
-            userPrompt: userPrompt,
-            temperature: 0.7,
-            maxTokens: 1000,
-            requireJSON: true
-        )
-
-        guard let data = responseText.data(using: .utf8) else {
-            throw GroqError.decodingError("Could not convert response to data")
-        }
-
-        do {
-            let decoder = JSONDecoder()
-            let plan = try decoder.decode(AIGeneratedIdentityPlan.self, from: data)
-            return plan
-        } catch {
-            print("Decoding error: \(error)")
-            print("Response: \(responseText)")
             throw GroqError.decodingError(error.localizedDescription)
         }
     }
@@ -1106,6 +955,262 @@ class GroqService: ObservableObject {
         - Present findings clearly with sources
         - Offer next steps
         """
+    }
+
+    // MARK: - AI Task Analysis
+
+    /// Analyze a task to determine what AI can do autonomously
+    func analyzeTaskForAI(
+        task: MomentumTask,
+        goalContext: String
+    ) async throws -> TaskAIAnalysis {
+        let systemPrompt = """
+        You are an AI project manager. Analyze this task and determine:
+        1. What type of completion this task requires
+        2. What parts AI can handle autonomously
+        3. What the user must do themselves
+        4. What decisions need user input
+        5. What research topics would help
+
+        Completion types:
+        - manual: User must do entirely themselves (e.g., physical tasks, meetings)
+        - aiAssisted: AI can help with parts but user completes (e.g., writing, coding)
+        - requiresInput: Needs user decisions before AI can act (e.g., strategic choices)
+        - aiAutonomous: AI can complete entirely (e.g., research, data gathering)
+
+        Return ONLY valid JSON in this format:
+        {
+          "completionType": "aiAssisted",
+          "aiCanDo": ["Research competitors", "Draft initial outline"],
+          "userMustDo": ["Review and approve", "Make final decisions"],
+          "questionsNeeded": [
+            {
+              "question": "What's your target audience?",
+              "options": [
+                {"label": "B2B Enterprise", "description": "Large companies"},
+                {"label": "B2B SMB", "description": "Small businesses"},
+                {"label": "B2C", "description": "Direct consumers"}
+              ],
+              "priority": "blocking"
+            }
+          ],
+          "researchNeeded": ["Market size data", "Competitor analysis"]
+        }
+        """
+
+        let userPrompt = """
+        Task: \(task.title)
+        Description: \(task.taskDescription ?? "No description")
+        Difficulty: \(task.difficulty.displayName)
+        Goal Context: \(goalContext)
+
+        Analyze what AI can do for this task vs what the user must do.
+        """
+
+        let responseText = try await makeRequest(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            temperature: 0.7,
+            maxTokens: 1000,
+            requireJSON: true
+        )
+
+        guard let data = responseText.data(using: .utf8) else {
+            throw GroqError.decodingError("Could not convert response to data")
+        }
+
+        do {
+            let decoder = JSONDecoder()
+            let analysis = try decoder.decode(TaskAIAnalysis.self, from: data)
+            return analysis
+        } catch {
+            throw GroqError.decodingError(error.localizedDescription)
+        }
+    }
+
+    /// Generate AI questions for user decisions
+    func generateDecisionQuestions(
+        context: String,
+        topic: String
+    ) async throws -> [AIQuestion] {
+        let systemPrompt = """
+        Generate 2-4 decision questions to help clarify user intent for an AI to act autonomously.
+        Each question should:
+        - Be specific and actionable
+        - Have 2-4 clear options
+        - Help the AI understand what the user wants
+
+        Return ONLY valid JSON:
+        {
+          "questions": [
+            {
+              "question": "The question text?",
+              "options": [
+                {"label": "Option 1", "description": "What this means"},
+                {"label": "Option 2", "description": "What this means"}
+              ],
+              "priority": "important"
+            }
+          ]
+        }
+        """
+
+        let userPrompt = """
+        Context: \(context)
+        Topic: \(topic)
+
+        Generate decision questions to clarify user preferences.
+        """
+
+        let responseText = try await makeRequest(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            temperature: 0.7,
+            maxTokens: 800,
+            requireJSON: true
+        )
+
+        struct QuestionsResponse: Codable {
+            struct QuestionData: Codable {
+                let question: String
+                let options: [OptionData]
+                let priority: String
+            }
+            struct OptionData: Codable {
+                let label: String
+                let description: String?
+            }
+            let questions: [QuestionData]
+        }
+
+        guard let data = responseText.data(using: .utf8) else {
+            throw GroqError.decodingError("Could not convert response to data")
+        }
+
+        let response = try JSONDecoder().decode(QuestionsResponse.self, from: data)
+
+        return response.questions.map { q in
+            AIQuestion(
+                goalId: UUID(), // Will be set by caller
+                question: q.question,
+                options: q.options.map { QuestionOption(label: $0.label, description: $0.description) },
+                priority: QuestionPriority(rawValue: q.priority) ?? .important
+            )
+        }
+    }
+
+    /// Generate a tool prompt for external tools
+    func generateToolPrompt(
+        tool: String,
+        context: String,
+        goal: String
+    ) async throws -> AIWorkResult {
+        let systemPrompt = """
+        Generate a detailed prompt that a user can copy-paste into \(tool) to accomplish their goal.
+
+        The prompt should:
+        - Be specific and detailed
+        - Include all relevant context
+        - Be formatted properly for the tool
+        - Include any necessary instructions
+
+        Return ONLY valid JSON:
+        {
+          "summary": "Brief description of what the prompt does",
+          "details": "Why this approach works",
+          "toolName": "\(tool)",
+          "prompt": "The full prompt to copy"
+        }
+        """
+
+        let userPrompt = """
+        Tool: \(tool)
+        Goal: \(goal)
+        Context: \(context)
+
+        Generate a comprehensive prompt for this tool.
+        """
+
+        let responseText = try await makeRequest(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            temperature: 0.7,
+            maxTokens: 1500,
+            requireJSON: true
+        )
+
+        struct ToolPromptResponse: Codable {
+            let summary: String
+            let details: String?
+            let toolName: String
+            let prompt: String
+        }
+
+        guard let data = responseText.data(using: .utf8) else {
+            throw GroqError.decodingError("Could not convert response to data")
+        }
+
+        let response = try JSONDecoder().decode(ToolPromptResponse.self, from: data)
+
+        return AIWorkResult(
+            summary: response.summary,
+            details: response.details,
+            toolName: response.toolName,
+            prompt: response.prompt
+        )
+    }
+
+    /// Generate a tiered research report
+    func generateResearchReport(
+        query: String,
+        context: String
+    ) async throws -> AIWorkResult {
+        let systemPrompt = """
+        Generate a research summary with tiered depth:
+        1. Summary: 1-2 sentence executive summary
+        2. Details: Key findings and analysis
+        3. Sources: Where the information came from
+
+        Return ONLY valid JSON:
+        {
+          "summary": "Brief executive summary",
+          "details": "Detailed findings and analysis",
+          "sources": ["Source 1", "Source 2"]
+        }
+        """
+
+        let userPrompt = """
+        Research Query: \(query)
+        Context: \(context)
+
+        Provide a tiered research report.
+        """
+
+        let responseText = try await makeRequest(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            temperature: 0.7,
+            maxTokens: 1200,
+            requireJSON: true
+        )
+
+        struct ResearchResponse: Codable {
+            let summary: String
+            let details: String
+            let sources: [String]?
+        }
+
+        guard let data = responseText.data(using: .utf8) else {
+            throw GroqError.decodingError("Could not convert response to data")
+        }
+
+        let response = try JSONDecoder().decode(ResearchResponse.self, from: data)
+
+        return AIWorkResult(
+            summary: response.summary,
+            details: response.details,
+            sources: response.sources
+        )
     }
 }
 
