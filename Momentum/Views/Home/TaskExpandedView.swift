@@ -30,6 +30,11 @@ struct TaskExpandedView: View {
                     // Task info
                     taskHeader
 
+                    // Outcome goal
+                    if !task.outcomeGoal.isEmpty {
+                        outcomeSection
+                    }
+
                     // Description
                     if let description = task.taskDescription, !description.isEmpty {
                         Text(description)
@@ -38,9 +43,14 @@ struct TaskExpandedView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
-                    // Microsteps
-                    if !task.microsteps.isEmpty {
-                        microstepsSection
+                    // Checklist
+                    if !task.checklist.isEmpty {
+                        checklistSection
+                    }
+
+                    // Tool prompts if any
+                    if let evaluation = task.aiEvaluation, let toolPrompts = evaluation.toolPrompts, !toolPrompts.isEmpty {
+                        toolPromptsSection(toolPrompts)
                     }
 
                     // Notes & Research
@@ -92,22 +102,28 @@ struct TaskExpandedView: View {
 
     private var taskHeader: some View {
         VStack(alignment: .leading, spacing: MomentumSpacing.compact) {
+            // Time and checklist info
             HStack(spacing: MomentumSpacing.tight) {
-                Text(task.difficulty.displayName)
-                    .font(MomentumFont.label())
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(difficultyColor)
-                    .cornerRadius(8)
-
                 HStack(spacing: 4) {
                     Ph.clock.regular
                         .frame(width: 14, height: 14)
-                    Text("\(task.estimatedMinutes) min")
+                    Text("\(task.totalEstimatedMinutes) min")
                         .font(MomentumFont.label())
                 }
                 .foregroundColor(.momentumTextSecondary)
+
+                if !task.checklist.isEmpty {
+                    Text("•")
+                        .foregroundColor(.momentumTextTertiary)
+
+                    HStack(spacing: 4) {
+                        Ph.listChecks.regular
+                            .frame(width: 14, height: 14)
+                        Text("\(task.completedChecklistCount)/\(task.checklist.count) steps")
+                            .font(MomentumFont.label())
+                    }
+                    .foregroundColor(.momentumTextSecondary)
+                }
             }
 
             Text(task.title)
@@ -117,29 +133,51 @@ struct TaskExpandedView: View {
         }
     }
 
-    // MARK: - Microsteps
+    // MARK: - Outcome Section
 
-    private var microstepsSection: some View {
+    private var outcomeSection: some View {
+        VStack(alignment: .leading, spacing: MomentumSpacing.tight) {
+            HStack(spacing: 6) {
+                Ph.target.regular
+                    .frame(width: 16, height: 16)
+                Text("Done when:")
+                    .font(MomentumFont.bodyMedium())
+            }
+            .foregroundColor(.momentumSuccess)
+
+            Text(task.outcomeGoal)
+                .font(MomentumFont.body())
+                .foregroundColor(.momentumTextPrimary)
+                .padding(MomentumSpacing.compact)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.momentumSuccess.opacity(0.1))
+                .cornerRadius(12)
+        }
+    }
+
+    // MARK: - Checklist
+
+    private var checklistSection: some View {
         VStack(alignment: .leading, spacing: MomentumSpacing.compact) {
             Text("Steps")
                 .font(MomentumFont.headingMedium())
                 .foregroundColor(.momentumTextPrimary)
 
             VStack(spacing: 0) {
-                ForEach(Array(task.microsteps.enumerated()), id: \.element.id) { index, step in
+                ForEach(Array(task.checklist.sorted { $0.orderIndex < $1.orderIndex }.enumerated()), id: \.element.id) { index, item in
                     Button {
-                        toggleMicrostep(at: index)
+                        toggleChecklistItem(at: index)
                     } label: {
                         HStack(spacing: MomentumSpacing.compact) {
                             ZStack {
                                 RoundedRectangle(cornerRadius: 6)
                                     .stroke(
-                                        step.isCompleted ? Color.momentumSuccess : Color.momentumCardBorder,
+                                        item.isCompleted ? Color.momentumSuccess : Color.momentumCardBorder,
                                         lineWidth: 1.5
                                     )
                                     .frame(width: 22, height: 22)
 
-                                if step.isCompleted {
+                                if item.isCompleted {
                                     RoundedRectangle(cornerRadius: 6)
                                         .fill(Color.momentumSuccess)
                                         .frame(width: 22, height: 22)
@@ -150,18 +188,24 @@ struct TaskExpandedView: View {
                                 }
                             }
 
-                            Text(step.stepText)
-                                .font(MomentumFont.body())
-                                .foregroundColor(step.isCompleted ? .momentumTextTertiary : .momentumTextPrimary)
-                                .strikethrough(step.isCompleted)
-                                .multilineTextAlignment(.leading)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.text)
+                                    .font(MomentumFont.body())
+                                    .foregroundColor(item.isCompleted ? .momentumTextTertiary : .momentumTextPrimary)
+                                    .strikethrough(item.isCompleted)
+                                    .multilineTextAlignment(.leading)
+
+                                Text("\(item.estimatedMinutes) min")
+                                    .font(MomentumFont.label())
+                                    .foregroundColor(.momentumTextTertiary)
+                            }
 
                             Spacer()
                         }
                         .padding(.vertical, MomentumSpacing.compact)
                     }
 
-                    if index < task.microsteps.count - 1 {
+                    if index < task.checklist.count - 1 {
                         Divider()
                             .background(Color.momentumCardBorder)
                     }
@@ -171,6 +215,64 @@ struct TaskExpandedView: View {
             .padding(.vertical, MomentumSpacing.tight)
             .background(Color.momentumBackgroundSecondary)
             .cornerRadius(16)
+        }
+    }
+
+    // MARK: - Tool Prompts Section
+
+    private func toolPromptsSection(_ prompts: [ToolPrompt]) -> some View {
+        VStack(alignment: .leading, spacing: MomentumSpacing.compact) {
+            Text("AI Prompts")
+                .font(MomentumFont.headingMedium())
+                .foregroundColor(.momentumTextPrimary)
+
+            ForEach(prompts) { prompt in
+                VStack(alignment: .leading, spacing: MomentumSpacing.tight) {
+                    HStack {
+                        HStack(spacing: 6) {
+                            Ph.sparkle.fill
+                                .frame(width: 14, height: 14)
+                            Text(prompt.toolName)
+                                .font(MomentumFont.bodyMedium())
+                        }
+                        .foregroundColor(.momentumViolet)
+
+                        Spacer()
+
+                        Button {
+                            UIPasteboard.general.string = prompt.prompt
+                            SoundManager.shared.successHaptic()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Ph.copy.regular
+                                    .frame(width: 14, height: 14)
+                                Text("Copy")
+                                    .font(MomentumFont.label())
+                            }
+                            .foregroundColor(.momentumViolet)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Color.momentumViolet.opacity(0.1))
+                            .cornerRadius(8)
+                        }
+                    }
+
+                    Text(prompt.context)
+                        .font(MomentumFont.label())
+                        .foregroundColor(.momentumTextSecondary)
+
+                    Text(prompt.prompt)
+                        .font(MomentumFont.body())
+                        .foregroundColor(.momentumTextPrimary)
+                        .lineLimit(6)
+                        .padding(MomentumSpacing.compact)
+                        .background(Color.momentumBackgroundSecondary)
+                        .cornerRadius(8)
+                }
+                .padding(MomentumSpacing.compact)
+                .background(Color.momentumViolet.opacity(0.05))
+                .cornerRadius(12)
+            }
         }
     }
 
@@ -310,18 +412,17 @@ struct TaskExpandedView: View {
 
     // MARK: - Helpers
 
-    private var difficultyColor: Color {
-        switch task.difficulty {
-        case .easy: return .momentumEasy
-        case .medium: return .momentumMedium
-        case .hard: return .momentumHard
-        }
-    }
+    private func toggleChecklistItem(at index: Int) {
+        let sortedChecklist = task.checklist.sorted { $0.orderIndex < $1.orderIndex }
+        guard index < sortedChecklist.count else { return }
+        let itemId = sortedChecklist[index].id
 
-    private func toggleMicrostep(at index: Int) {
         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-            task.microsteps[index].isCompleted.toggle()
+            if let checklistIndex = task.checklist.firstIndex(where: { $0.id == itemId }) {
+                task.checklist[checklistIndex].isCompleted.toggle()
+            }
         }
-        appState.updateTaskInGoal(task)
+
+        appState.toggleChecklistItem(taskId: task.id, checklistItemId: itemId)
     }
 }

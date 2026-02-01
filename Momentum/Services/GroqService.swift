@@ -72,13 +72,13 @@ class GroqService: ObservableObject {
             if let transaction = metrics.transactionMetrics.first {
                 let protocolName = transaction.networkProtocolName ?? "unknown"
                 let duration = String(format: "%.2f", transaction.responseEndDate?.timeIntervalSince(transaction.fetchStartDate ?? Date()) ?? 0)
-                print("🌐 Protocol: \(protocolName) | Duration: \(duration)s")
+                print("Protocol: \(protocolName) | Duration: \(duration)s")
             }
         }
 
         func urlSession(_ session: URLSession, didBecomeInvalidWithError error: Error?) {
             if let error = error {
-                print("❌ URLSession invalidated: \(error.localizedDescription)")
+                print("URLSession invalidated: \(error.localizedDescription)")
             }
         }
     }
@@ -178,24 +178,24 @@ class GroqService: ObservableObject {
         let encoder = JSONEncoder()
         request.httpBody = try encoder.encode(groqRequest)
 
-        print("📡 Making Groq API request (Attempt \(retryCount + 1))...")
+        print("Making Groq API request (Attempt \(retryCount + 1))...")
 
         do {
             let (data, response) = try await session.data(for: request)
 
             guard let httpResponse = response as? HTTPURLResponse else {
-                print("❌ Invalid HTTP response")
+                print("Invalid HTTP response")
                 throw GroqError.invalidResponse
             }
 
-            print("📊 HTTP Status: \(httpResponse.statusCode)")
+            print("HTTP Status: \(httpResponse.statusCode)")
 
             guard httpResponse.statusCode == 200 else {
                 // Retry on server errors or rate limiting
                 if (500...599).contains(httpResponse.statusCode) || httpResponse.statusCode == 429 {
                     if retryCount < 3 {
                         let delay = Double(retryCount + 1) * 2
-                        print("⚠️ Server error \(httpResponse.statusCode), retrying in \(delay)s...")
+                        print("Server error \(httpResponse.statusCode), retrying in \(delay)s...")
                         try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                         return try await makeRequest(
                             systemPrompt: systemPrompt,
@@ -209,7 +209,7 @@ class GroqService: ObservableObject {
                 }
 
                 if let errorString = String(data: data, encoding: .utf8) {
-                    print("❌ API Error: \(errorString)")
+                    print("API Error: \(errorString)")
                     throw GroqError.apiError("Status \(httpResponse.statusCode): \(errorString)")
                 }
                 throw GroqError.apiError("Status code: \(httpResponse.statusCode)")
@@ -219,11 +219,11 @@ class GroqService: ObservableObject {
             let groqResponse = try decoder.decode(GroqResponse.self, from: data)
 
             guard let content = groqResponse.choices.first?.message.content else {
-                print("❌ No content in response")
+                print("No content in response")
                 throw GroqError.invalidResponse
             }
 
-            print("✅ Received response (\(content.count) characters)")
+            print("Received response (\(content.count) characters)")
             return content
 
         } catch let error as GroqError {
@@ -234,7 +234,7 @@ class GroqService: ObservableObject {
             let retryableCodes = [-1001, -1004, -1005, -1009, -1020]
             if nsError.domain == NSURLErrorDomain && retryableCodes.contains(nsError.code) && retryCount < 3 {
                 let delay = pow(2.0, Double(retryCount + 1))
-                print("⚠️ Network error (\(nsError.code)), retrying in \(delay)s...")
+                print("Network error (\(nsError.code)), retrying in \(delay)s...")
                 try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                 return try await makeRequest(
                     systemPrompt: systemPrompt,
@@ -245,7 +245,7 @@ class GroqService: ObservableObject {
                     retryCount: retryCount + 1
                 )
             }
-            print("❌ Request failed: \(error.localizedDescription)")
+            print("Request failed: \(error.localizedDescription)")
             throw GroqError.networkError(error)
         }
     }
@@ -259,15 +259,8 @@ class GroqService: ObservableObject {
 
         For goal-based visions (e.g., "Start a consulting agency"), ask about:
         - Experience level
-        - Available time commitment
-        - Timeline expectations
         - Main challenges or concerns
-
-        For identity-based visions (e.g., "Become an entrepreneur"), ask about:
-        - Specific interests or passions
-        - What this identity means to them
-        - Any concrete goals this leads to
-        - What's holding them back
+        - Specific interests within the domain
 
         IMPORTANT:
         - Make questions specific to their exact vision domain
@@ -275,6 +268,7 @@ class GroqService: ObservableObject {
         - Set "allowsTextInput" to true if you want to also allow custom text input
         - DO NOT include "Other (please specify)" as an option - use allowsTextInput instead
         - Keep options concise and relevant
+        - DO NOT ask about time commitment or available days - we collect that separately
 
         Be warm, encouraging, and specific. Each question should help create a better action plan.
 
@@ -294,6 +288,7 @@ class GroqService: ObservableObject {
         User's vision: "\(visionText)"
 
         Generate 3-5 personalized questions to understand their background and create an effective action plan.
+        Remember: DO NOT ask about time commitment or available days.
         """
 
         let responseText = try await makeRequest(
@@ -335,78 +330,68 @@ class GroqService: ObservableObject {
         }
     }
 
-    // MARK: - Project Plan Generation
+    // MARK: - Project Plan Generation (New Milestone-based System)
 
     func generateProjectPlan(
         visionText: String,
         answers: OnboardingAnswers
     ) async throws -> AIGeneratedPlan {
-        let systemPrompt = """
-        You are Momentum's AI coach. Generate a HYPER-PERSONALIZED goal achievement plan using the Dan Martell framework combined with James Clear's 1% improvement philosophy.
+        let weeklyMinutes = answers.weeklyHours * 60
+        let availableDaysString = answers.availableDays.sorted().map { dayNumber -> String in
+            let days = ["", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+            return days[dayNumber]
+        }.joined(separator: ", ")
+        let tasksPerWeek = answers.availableDays.count // One task per available day
 
-        CRITICAL: The plan MUST be 100% specific to the user's EXACT vision. DO NOT use generic examples or templates.
+        let systemPrompt = """
+        You are Momentum's AI coach. Generate a HYPER-PERSONALIZED goal achievement plan.
+
+        CRITICAL: The plan MUST be 100% specific to the user's EXACT vision. DO NOT use generic examples.
 
         Framework:
         1. North Star Vision - One SMART annual goal (refined from user's vision)
-        2. 12 Power Goals - Monthly projects that build toward the vision
-        3. Weekly Milestones - 5 concrete outcomes per Power Goal
-        4. Daily Tasks - 3 tasks per day (easy anchor task, medium progress task, challenging stretch task)
+        2. 12 Milestones - Sequential achievements (NOT month-based) that build toward the vision
+        3. First Week Tasks - Tasks with detailed checklists for the first week only
 
-        Task Difficulty Balance:
-        - EASY (15 min): Consistent anchor task that doesn't change much
-        - MEDIUM (30 min): Meaningful progress on the goal
-        - HARD (45 min): Stretching challenge that's still achievable
+        TASK REQUIREMENTS:
+        - Generate exactly \(tasksPerWeek) tasks for the first week (one per available day)
+        - Total time for all tasks must NOT exceed \(weeklyMinutes) minutes
+        - Each task MUST have:
+          - A clear outcome goal (definition of "done")
+          - 3-5 checklist items with time estimates per item
+          - Checklist items should be specific, actionable steps
+        - NO difficulty levels (easy/medium/hard) - just well-scoped tasks
+        - Distribute tasks across available days: \(availableDaysString)
 
         PERSONALIZATION REQUIREMENTS:
         - Every task must directly relate to their SPECIFIC vision
-        - Use their exact context (experience level, time available, concerns)
-        - Make tasks actionable with specific details (not "research competitors" but "research 3 [specific type] competitors in [specific niche]")
-        - Reference their actual timeline and adjust pace accordingly
-
-        Be encouraging, specific, and action-oriented. Use the user's experience level and available time to create realistic, achievable tasks.
-
-        CRITICAL JSON FORMATTING RULES:
-        - Return ONLY valid JSON with NO additional text
-        - Ensure all brackets and braces are properly closed
-        - Use double quotes for all keys and string values
-        - No trailing commas
-        - The anchor_task field is a simple string at the root level
+        - Use their exact context (experience level, concerns)
+        - Make tasks actionable with specific details
+        - Reference their actual situation and adjust accordingly
 
         Return ONLY valid JSON matching this EXACT structure:
         {
           "vision_refined": "SMART version of the user's vision",
-          "power_goals": [
-            {"month": 1, "goal": "Title", "description": "What this achieves"},
-            {"month": 2, "goal": "Title", "description": "What this achieves"}
+          "milestones": [
+            {"sequence": 1, "title": "Title", "description": "What this achieves"},
+            {"sequence": 2, "title": "Title", "description": "What this achieves"}
           ],
-          "current_power_goal": {
-            "goal": "Month 1 title",
-            "weekly_milestones": [
-              {
-                "week": 1,
-                "milestone": "What to achieve this week",
-                "daily_tasks": [
-                  {
-                    "day": 1,
-                    "tasks": [
-                      {
-                        "title": "Task name",
-                        "difficulty": "easy",
-                        "estimated_minutes": 15,
-                        "description": "What to do and why"
-                      }
-                    ]
-                  }
-                ]
-              }
-            ]
-          },
-          "anchor_task": "The consistent daily task"
+          "first_week_tasks": [
+            {
+              "title": "Task name",
+              "description": "What to do and why",
+              "outcome_goal": "Clear definition of done",
+              "checklist": [
+                {"text": "Step 1 description", "estimated_minutes": 10},
+                {"text": "Step 2 description", "estimated_minutes": 15}
+              ],
+              "scheduled_day": 2
+            }
+          ]
         }
 
-        Generate all 12 Power Goals, and for Power Goal #1, create 5 weekly milestones with 21 daily tasks (3 per day for 7 days).
-
-        VERIFY: Before returning, ensure your JSON is valid and properly closed.
+        Generate all 12 milestones and \(tasksPerWeek) first-week tasks.
+        VERIFY: Ensure total time <= \(weeklyMinutes) minutes.
         """
 
         let userPrompt = """
@@ -414,21 +399,21 @@ class GroqService: ObservableObject {
 
         USER CONTEXT:
         - Experience Level: \(answers.experienceLevel.isEmpty ? "Not specified" : answers.experienceLevel)
-        - Weekly Time Available: \(answers.weeklyHours.isEmpty ? "Not specified" : answers.weeklyHours)
-        - Target Timeline: \(answers.timeline.isEmpty ? "1 year" : answers.timeline)
+        - Weekly Time Available: \(answers.weeklyHours) hours (\(weeklyMinutes) minutes)
+        - Available Days: \(availableDaysString)
         - Main Concern: \(answers.biggestConcern.isEmpty ? "Getting started" : answers.biggestConcern)
         - Passions/Interests: \(answers.passions.isEmpty ? "Not specified" : answers.passions)
         - Additional Context: \(answers.identityMeaning.isEmpty ? "Not specified" : answers.identityMeaning)
 
         CRITICAL INSTRUCTIONS:
-        1. Read the vision carefully - this is about "\(visionText)", NOT about consulting or business unless explicitly stated
+        1. Read the vision carefully - this is about "\(visionText)"
         2. Every single task must be 100% relevant to THIS SPECIFIC vision
         3. Use concrete, actionable language specific to their domain
         4. Adjust task complexity based on their experience level
-        5. Fit the pace to their available time and timeline
+        5. Fit all tasks within their \(weeklyMinutes) minute weekly budget
+        6. Create \(tasksPerWeek) tasks, one for each available day
 
-        Generate a complete, HYPER-PERSONALIZED action plan that transforms THIS EXACT vision into daily tasks.
-        DO NOT use generic templates or examples from other domains.
+        Generate a complete, HYPER-PERSONALIZED action plan.
         """
 
         let responseText = try await makeRequest(
@@ -439,28 +424,12 @@ class GroqService: ObservableObject {
             requireJSON: true
         )
 
-        // Clean up the JSON response (fix common AI formatting errors)
+        // Clean up the JSON response
         var cleanedJSON = responseText.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // Fix common malformed JSON patterns from AI
-        // Fix: "anchor_task",":", "value"] -> "anchor_task": "value"
-        cleanedJSON = cleanedJSON.replacingOccurrences(
-            of: "\"anchor_task\"\\s*,\\s*\":\"\\s*,\\s*\"([^\"]+)\"\\s*\\]",
-            with: "\"anchor_task\": \"$1\"",
-            options: .regularExpression
-        )
-
-        // Fix: "anchor_task",":", -> "anchor_task":
-        cleanedJSON = cleanedJSON.replacingOccurrences(of: "\"anchor_task\",\":\",", with: "\"anchor_task\":")
-        cleanedJSON = cleanedJSON.replacingOccurrences(of: "\"anchor_task\", \":\",", with: "\"anchor_task\":")
-        cleanedJSON = cleanedJSON.replacingOccurrences(of: "\"anchor_task\" , \":\" ,", with: "\"anchor_task\":")
-
-        // Remove any trailing commas before closing brackets
+        // Remove trailing commas before closing brackets
         cleanedJSON = cleanedJSON.replacingOccurrences(of: ",\\s*}", with: "}", options: .regularExpression)
         cleanedJSON = cleanedJSON.replacingOccurrences(of: ",\\s*]", with: "]", options: .regularExpression)
-
-        // Ensure proper closing: }}} should be }}
-        cleanedJSON = cleanedJSON.replacingOccurrences(of: "}}}", with: "}}")
 
         // Fix missing closing brace if needed
         let openBraces = cleanedJSON.filter { $0 == "{" }.count
@@ -469,7 +438,6 @@ class GroqService: ObservableObject {
             cleanedJSON += String(repeating: "}", count: openBraces - closeBraces)
         }
 
-        // Parse JSON response
         guard let data = cleanedJSON.data(using: .utf8) else {
             throw GroqError.decodingError("Could not convert response to data")
         }
@@ -484,6 +452,348 @@ class GroqService: ObservableObject {
             print("Cleaned response: \(cleanedJSON)")
             throw GroqError.decodingError(error.localizedDescription)
         }
+    }
+
+    // MARK: - Generate Weekly Tasks
+
+    func generateWeeklyTasks(
+        milestone: Milestone,
+        weeklyTimeBudget: Int,
+        availableDays: [Int],
+        userSkills: [String: String],
+        previousTasks: [MomentumTask],
+        goalContext: String
+    ) async throws -> [GeneratedTaskWithChecklist] {
+        let tasksPerWeek = availableDays.count
+        let availableDaysString = availableDays.map { dayNumber -> String in
+            let days = ["", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+            return days[dayNumber]
+        }.joined(separator: ", ")
+
+        let previousTasksSummary = previousTasks.prefix(5).map { $0.title }.joined(separator: ", ")
+        let skillsSummary = userSkills.map { "\($0.key): \($0.value)" }.joined(separator: ", ")
+
+        let systemPrompt = """
+        Generate tasks for the next week of a milestone-based goal plan.
+
+        REQUIREMENTS:
+        - Generate exactly \(tasksPerWeek) tasks (one per available day)
+        - Total time must NOT exceed \(weeklyTimeBudget) minutes
+        - Each task needs:
+          - Clear outcome goal (definition of "done")
+          - 3-5 checklist items with time estimates
+          - Specific, actionable steps
+        - Build on previous progress
+        - Account for user's skill levels
+
+        Return ONLY valid JSON:
+        {
+          "tasks": [
+            {
+              "title": "Task name",
+              "description": "What to do",
+              "outcome_goal": "Definition of done",
+              "checklist": [
+                {"text": "Step description", "estimated_minutes": 10}
+              ],
+              "scheduled_day": 2
+            }
+          ]
+        }
+        """
+
+        let userPrompt = """
+        MILESTONE: \(milestone.title)
+        Milestone Description: \(milestone.description ?? "No description")
+        Goal Context: \(goalContext)
+
+        Weekly Time Budget: \(weeklyTimeBudget) minutes
+        Available Days: \(availableDaysString)
+        User Skills: \(skillsSummary.isEmpty ? "Unknown" : skillsSummary)
+        Recent Tasks Completed: \(previousTasksSummary.isEmpty ? "None" : previousTasksSummary)
+
+        Generate \(tasksPerWeek) tasks that advance this milestone.
+        """
+
+        let responseText = try await makeRequest(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            temperature: 0.7,
+            maxTokens: 2000,
+            requireJSON: true
+        )
+
+        guard let data = responseText.data(using: .utf8) else {
+            throw GroqError.decodingError("Could not convert response to data")
+        }
+
+        let response = try JSONDecoder().decode(WeeklyTasksResponse.self, from: data)
+        return response.tasks
+    }
+
+    // MARK: - Daily Task Evaluation
+
+    func evaluateTodaysTasks(
+        tasks: [MomentumTask],
+        userSkills: [String: String],
+        goalContext: String
+    ) async throws -> [TaskEvaluationResponse] {
+        let tasksDescription = tasks.enumerated().map { index, task in
+            """
+            Task \(index + 1): \(task.title)
+            Description: \(task.taskDescription ?? "No description")
+            Outcome Goal: \(task.outcomeGoal)
+            Checklist: \(task.checklist.map { $0.text }.joined(separator: ", "))
+            """
+        }.joined(separator: "\n\n")
+
+        let skillsSummary = userSkills.isEmpty ? "No skills data" : userSkills.map { "\($0.key): \($0.value)" }.joined(separator: ", ")
+
+        let systemPrompt = """
+        Evaluate tasks to determine the best approach for completion.
+
+        For each task, determine:
+        1. Can AI do this autonomously? (research, writing, analysis)
+        2. Can the user do this with their current skills?
+        3. What skills are required?
+        4. Best approach: userDirect, aiAssisted, toolHandoff, needsGuidance
+        5. If skills are unknown, generate a skill question
+        6. If user can't do it, suggest an external tool
+
+        Return ONLY valid JSON:
+        {
+          "evaluations": [
+            {
+              "can_ai_do": false,
+              "can_user_do": true,
+              "skills_required": ["coding", "design"],
+              "approach": "userDirect",
+              "skill_questions": [
+                {"skill": "coding", "question": "Can you code?", "options": ["Yes", "No", "Learning"]}
+              ],
+              "tool_suggestion": {"tool_name": "Cursor", "reason": "For code generation"},
+              "guidance_needed": false
+            }
+          ]
+        }
+        """
+
+        let userPrompt = """
+        GOAL CONTEXT: \(goalContext)
+        USER SKILLS: \(skillsSummary)
+
+        TASKS TO EVALUATE:
+        \(tasksDescription)
+
+        Evaluate each task and return an evaluation for each one in order.
+        """
+
+        let responseText = try await makeRequest(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            temperature: 0.5,
+            maxTokens: 2000,
+            requireJSON: true
+        )
+
+        struct EvaluationsResponse: Codable {
+            let evaluations: [TaskEvaluationResponse]
+        }
+
+        guard let data = responseText.data(using: .utf8) else {
+            throw GroqError.decodingError("Could not convert response to data")
+        }
+
+        let response = try JSONDecoder().decode(EvaluationsResponse.self, from: data)
+        return response.evaluations
+    }
+
+    // MARK: - Generate Skill Question
+
+    func generateSkillQuestion(
+        task: MomentumTask,
+        skill: String
+    ) async throws -> SkillQuestion {
+        let systemPrompt = """
+        Generate a skill assessment question for a specific skill needed for a task.
+        The question should be friendly and help determine the user's level.
+
+        Return ONLY valid JSON:
+        {
+          "skill": "the skill name",
+          "question": "The question to ask",
+          "options": ["Yes, confident", "Somewhat", "No, but willing to learn", "No"]
+        }
+        """
+
+        let userPrompt = """
+        Task: \(task.title)
+        Skill to assess: \(skill)
+
+        Generate a friendly skill assessment question.
+        """
+
+        let responseText = try await makeRequest(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            temperature: 0.7,
+            maxTokens: 300,
+            requireJSON: true
+        )
+
+        struct SkillQuestionResponse: Codable {
+            let skill: String
+            let question: String
+            let options: [String]
+        }
+
+        guard let data = responseText.data(using: .utf8) else {
+            throw GroqError.decodingError("Could not convert response to data")
+        }
+
+        let response = try JSONDecoder().decode(SkillQuestionResponse.self, from: data)
+
+        return SkillQuestion(
+            taskId: task.id,
+            skill: response.skill,
+            question: response.question,
+            options: response.options
+        )
+    }
+
+    // MARK: - Generate Tool Prompt
+
+    func generateToolPromptForTask(
+        task: MomentumTask,
+        tool: String,
+        userSkillLevel: String?,
+        goalContext: String
+    ) async throws -> ToolPrompt {
+        let systemPrompt = """
+        Generate a detailed, copy-paste ready prompt for an external tool.
+
+        The prompt should:
+        - Be specific and detailed
+        - Include all relevant context
+        - Be formatted properly for the tool
+        - Account for the user's skill level
+        - Be ready to copy and paste directly into the tool
+
+        Return ONLY valid JSON:
+        {
+          "tool_name": "\(tool)",
+          "prompt": "The full prompt text",
+          "context": "Brief explanation of why this prompt"
+        }
+        """
+
+        let userPrompt = """
+        TASK: \(task.title)
+        Description: \(task.taskDescription ?? "No description")
+        Outcome Goal: \(task.outcomeGoal)
+        Goal Context: \(goalContext)
+        Tool: \(tool)
+        User Skill Level: \(userSkillLevel ?? "Unknown")
+
+        Generate a comprehensive prompt for \(tool) that will help complete this task.
+        """
+
+        let responseText = try await makeRequest(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            temperature: 0.7,
+            maxTokens: 1500,
+            requireJSON: true
+        )
+
+        struct ToolPromptResponse: Codable {
+            let tool_name: String
+            let prompt: String
+            let context: String
+        }
+
+        guard let data = responseText.data(using: .utf8) else {
+            throw GroqError.decodingError("Could not convert response to data")
+        }
+
+        let response = try JSONDecoder().decode(ToolPromptResponse.self, from: data)
+
+        return ToolPrompt(
+            taskId: task.id,
+            toolName: response.tool_name,
+            prompt: response.prompt,
+            context: response.context
+        )
+    }
+
+    // MARK: - Generate Guidance Questionnaire
+
+    func generateGuidanceQuestionnaire(
+        task: MomentumTask,
+        goalContext: String
+    ) async throws -> AIQuestionnaire {
+        let systemPrompt = """
+        Generate a brainstorming questionnaire to help the user think through a task.
+
+        The questionnaire should:
+        - Help clarify their approach
+        - Surface important decisions
+        - Guide their thinking
+        - Be 3-5 questions
+        - Mix multiple choice and free text
+
+        Return ONLY valid JSON:
+        {
+          "title": "Short questionnaire title",
+          "questions": [
+            {"question": "Question text?", "options": ["Option 1", "Option 2"]},
+            {"question": "Free text question?", "options": null}
+          ]
+        }
+        """
+
+        let userPrompt = """
+        TASK: \(task.title)
+        Description: \(task.taskDescription ?? "No description")
+        Outcome Goal: \(task.outcomeGoal)
+        Goal Context: \(goalContext)
+
+        Generate a questionnaire to help the user think through this task.
+        """
+
+        let responseText = try await makeRequest(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            temperature: 0.7,
+            maxTokens: 1000,
+            requireJSON: true
+        )
+
+        struct QuestionnaireResponse: Codable {
+            let title: String
+            let questions: [QuestionData]
+
+            struct QuestionData: Codable {
+                let question: String
+                let options: [String]?
+            }
+        }
+
+        guard let data = responseText.data(using: .utf8) else {
+            throw GroqError.decodingError("Could not convert response to data")
+        }
+
+        let response = try JSONDecoder().decode(QuestionnaireResponse.self, from: data)
+
+        let brainstormQuestions = response.questions.map { q in
+            BrainstormQuestion(question: q.question, options: q.options)
+        }
+
+        return AIQuestionnaire(
+            taskId: task.id,
+            title: response.title,
+            questions: brainstormQuestions
+        )
     }
 
     // MARK: - AI Assistant for Task Help
@@ -522,24 +832,28 @@ class GroqService: ObservableObject {
         )
     }
 
-    // MARK: - Generate Microsteps for Tasks
+    // MARK: - Generate Checklist Items for Tasks
 
-    func generateMicrosteps(
+    func generateChecklistItems(
         taskTitle: String,
         taskDescription: String?,
-        difficulty: TaskDifficulty
-    ) async throws -> [String] {
+        totalMinutes: Int
+    ) async throws -> [ChecklistItem] {
         let systemPrompt = """
-        You are Momentum's AI coach. Break down a task into 3-5 specific microsteps that make it easy to start and complete.
+        Break down a task into 3-5 specific checklist items with time estimates.
 
-        Each microstep should be:
+        Each item should be:
         - A single, concrete action
-        - Something that takes 5-15 minutes
-        - Clear and specific (no vague advice)
+        - Have a realistic time estimate
+        - Be specific and actionable
 
-        Return ONLY valid JSON in this format:
+        Total time should approximately equal the provided budget.
+
+        Return ONLY valid JSON:
         {
-          "microsteps": ["First specific action", "Second specific action", ...]
+          "checklist": [
+            {"text": "Step description", "estimated_minutes": 10}
+          ]
         }
         """
 
@@ -547,9 +861,9 @@ class GroqService: ObservableObject {
         let userPrompt = """
         Task: \(taskTitle)
         Description: \(taskInfo)
-        Difficulty: \(difficulty.displayName)
+        Time Budget: \(totalMinutes) minutes
 
-        Break this into 3-5 specific, actionable microsteps.
+        Break this into 3-5 checklist items with time estimates.
         """
 
         let responseText = try await makeRequest(
@@ -560,86 +874,22 @@ class GroqService: ObservableObject {
             requireJSON: true
         )
 
-        struct MicrostepsResponse: Codable {
-            let microsteps: [String]
+        struct ChecklistResponse: Codable {
+            let checklist: [GeneratedChecklistItem]
         }
 
         guard let data = responseText.data(using: .utf8) else {
             throw GroqError.decodingError("Could not convert response to data")
         }
 
-        do {
-            let decoder = JSONDecoder()
-            let response = try decoder.decode(MicrostepsResponse.self, from: data)
-            return response.microsteps
-        } catch {
-            throw GroqError.decodingError(error.localizedDescription)
-        }
-    }
+        let response = try JSONDecoder().decode(ChecklistResponse.self, from: data)
 
-    // MARK: - Generate Enhanced Task Details
-
-    func generateTaskDetails(
-        task: MomentumTask,
-        context: String
-    ) async throws -> EnhancedTaskDetails {
-        let systemPrompt = """
-        You are Momentum's AI coach. Generate detailed task information to help the user understand and complete this task effectively.
-
-        Provide:
-        1. Difficulty Explanation - Why this task is rated easy/medium/hard
-        2. Time Breakdown - Suggest time allocation for each microstep
-        3. Tips - 2-3 actionable tips specific to this task
-
-        Return ONLY valid JSON in this format:
-        {
-          "difficultyExplanation": "Clear explanation of difficulty rating",
-          "timeBreakdown": [
-            {
-              "microstep": "Step description",
-              "estimatedMinutes": 10,
-              "rationale": "Why this takes ~10 minutes"
-            }
-          ],
-          "tips": ["Tip 1", "Tip 2", "Tip 3"]
-        }
-        """
-
-        let microstepsText = task.microsteps.isEmpty
-            ? "No microsteps yet"
-            : task.microsteps.map { $0.stepText }.joined(separator: "\n")
-
-        let userPrompt = """
-        Task: \(task.title)
-        Description: \(task.taskDescription ?? "No description")
-        Difficulty: \(task.difficulty.displayName)
-        Estimated Time: \(task.estimatedMinutes) minutes
-        Goal Context: \(context)
-
-        Microsteps:
-        \(microstepsText)
-
-        Generate detailed task information to help the user complete this task.
-        """
-
-        let responseText = try await makeRequest(
-            systemPrompt: systemPrompt,
-            userPrompt: userPrompt,
-            temperature: 0.7,
-            maxTokens: 800,
-            requireJSON: true
-        )
-
-        guard let data = responseText.data(using: .utf8) else {
-            throw GroqError.decodingError("Could not convert response to data")
-        }
-
-        do {
-            let decoder = JSONDecoder()
-            let details = try decoder.decode(EnhancedTaskDetails.self, from: data)
-            return details
-        } catch {
-            throw GroqError.decodingError(error.localizedDescription)
+        return response.checklist.enumerated().map { index, item in
+            ChecklistItem(
+                text: item.text,
+                estimatedMinutes: item.estimatedMinutes,
+                orderIndex: index
+            )
         }
     }
 
@@ -653,7 +903,7 @@ class GroqService: ObservableObject {
         let personalityDescription: String
         switch personality {
         case .energetic:
-            personalityDescription = "energetic, enthusiastic, uses emojis, very encouraging"
+            personalityDescription = "energetic, enthusiastic, very encouraging"
         case .calm:
             personalityDescription = "calm, mindful, focused, gentle and steady"
         case .direct:
@@ -700,12 +950,6 @@ class GroqService: ObservableObject {
         - statusUpdate: User is sharing progress or asking "what's next"
 
         Respond with ONLY the category name, nothing else.
-
-        Examples:
-        "can you research the best demographics for my app?" -> researchRequest
-        "how should I structure my pitch deck?" -> taskHelp
-        "what are some creative ways to market this?" -> brainstorming
-        "I finished the research, what's next?" -> statusUpdate
         """
 
         let userPrompt = """
@@ -799,21 +1043,6 @@ class GroqService: ObservableObject {
         Tone: Helpful and concise. Focus on actionable insights.
 
         CRITICAL: Only include information actually present in the search results. Do not hallucinate or add external knowledge. If results are insufficient, say so clearly.
-
-        Example:
-        "Based on your research on virtual try-on demographics:
-
-        The primary market is women aged 18-35 who shop online frequently. Key insights:
-        • 67% of online fashion shoppers want AR try-on features
-        • Gen Z consumers (18-24) are 2x more likely to use virtual try-on
-        • Main motivation is reducing returns (reported by 73% of users)
-
-        Recommendations for your app:
-        - Focus marketing on Instagram/TikTok where Gen Z fashion shoppers are active
-        - Emphasize 'try before you buy' and return reduction in messaging
-        - Consider starting with women's fashion accessories (highest adoption)
-
-        Sources: McKinsey Fashion Technology Report, Shopify AR Commerce Study, RetailDive Consumer Survey"
         """
 
         let clarificationsText = clarifications.map { "Q: \($0.question)\nA: \($0.answer)" }.joined(separator: "\n")
@@ -841,8 +1070,6 @@ class GroqService: ObservableObject {
     }
 
     /// Perform browser search using Groq's built-in browser_search tool
-    /// NOTE: Uses openai/gpt-oss-120b model (not llama) because browser_search tool
-    /// is only available on specific models. Other methods use llama-3.3-70b-versatile.
     func performBrowserSearch(
         query: String,
         clarifications: [QAPair],
@@ -861,8 +1088,6 @@ class GroqService: ObservableObject {
         - Sources (include URLs where possible)
 
         Tone: Helpful, competent, friendly. Focus on actionable insights.
-
-        CRITICAL: Only include information from your search results. Do not hallucinate. If results are insufficient, clearly state what information is missing.
         """
 
         let clarificationsText = clarifications.isEmpty
@@ -906,18 +1131,18 @@ class GroqService: ObservableObject {
         let encoder = JSONEncoder()
         request.httpBody = try encoder.encode(groqRequest)
 
-        print("📡 Making browser search request...")
+        print("Making browser search request...")
         let (data, response) = try await session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw GroqError.invalidResponse
         }
 
-        print("📊 Browser search HTTP Status: \(httpResponse.statusCode)")
+        print("Browser search HTTP Status: \(httpResponse.statusCode)")
 
         if httpResponse.statusCode != 200 {
             if let errorMessage = String(data: data, encoding: .utf8) {
-                print("❌ Browser search error: \(errorMessage)")
+                print("Browser search error: \(errorMessage)")
                 throw GroqError.apiError("HTTP \(httpResponse.statusCode): \(errorMessage)")
             } else {
                 throw GroqError.apiError("HTTP \(httpResponse.statusCode)")
@@ -931,175 +1156,12 @@ class GroqService: ObservableObject {
             throw GroqError.invalidResponse
         }
 
-        print("✅ Browser search completed")
+        print("Browser search completed")
         return firstChoice.message.content
     }
 
-    // MARK: - Companion System Prompt
+    // MARK: - Generate Tool Prompt (Legacy)
 
-    /// System prompt for companion tone (helpful assistant, not motivational coach)
-    private func companionSystemPrompt() -> String {
-        """
-        You are Momentum's AI companion - a maximally helpful research and planning assistant.
-
-        Your role is to DO THINGS for the user, not just advise them:
-        - When asked to research something, you ASK CLARIFYING QUESTIONS then PERFORM ACTUAL RESEARCH
-        - When asked for help, you provide SPECIFIC, ACTIONABLE guidance
-        - You are their partner in achieving goals, not a motivational poster
-
-        Tone: Helpful, competent, friendly. Think "capable assistant" not "cheerleader coach"
-
-        Key behaviors:
-        - Ask 2-3 specific questions to understand user's exact need
-        - Do the research/thinking work for them
-        - Present findings clearly with sources
-        - Offer next steps
-        """
-    }
-
-    // MARK: - AI Task Analysis
-
-    /// Analyze a task to determine what AI can do autonomously
-    func analyzeTaskForAI(
-        task: MomentumTask,
-        goalContext: String
-    ) async throws -> TaskAIAnalysis {
-        let systemPrompt = """
-        You are an AI project manager. Analyze this task and determine:
-        1. What type of completion this task requires
-        2. What parts AI can handle autonomously
-        3. What the user must do themselves
-        4. What decisions need user input
-        5. What research topics would help
-
-        Completion types:
-        - manual: User must do entirely themselves (e.g., physical tasks, meetings)
-        - aiAssisted: AI can help with parts but user completes (e.g., writing, coding)
-        - requiresInput: Needs user decisions before AI can act (e.g., strategic choices)
-        - aiAutonomous: AI can complete entirely (e.g., research, data gathering)
-
-        Return ONLY valid JSON in this format:
-        {
-          "completionType": "aiAssisted",
-          "aiCanDo": ["Research competitors", "Draft initial outline"],
-          "userMustDo": ["Review and approve", "Make final decisions"],
-          "questionsNeeded": [
-            {
-              "question": "What's your target audience?",
-              "options": [
-                {"label": "B2B Enterprise", "description": "Large companies"},
-                {"label": "B2B SMB", "description": "Small businesses"},
-                {"label": "B2C", "description": "Direct consumers"}
-              ],
-              "priority": "blocking"
-            }
-          ],
-          "researchNeeded": ["Market size data", "Competitor analysis"]
-        }
-        """
-
-        let userPrompt = """
-        Task: \(task.title)
-        Description: \(task.taskDescription ?? "No description")
-        Difficulty: \(task.difficulty.displayName)
-        Goal Context: \(goalContext)
-
-        Analyze what AI can do for this task vs what the user must do.
-        """
-
-        let responseText = try await makeRequest(
-            systemPrompt: systemPrompt,
-            userPrompt: userPrompt,
-            temperature: 0.7,
-            maxTokens: 1000,
-            requireJSON: true
-        )
-
-        guard let data = responseText.data(using: .utf8) else {
-            throw GroqError.decodingError("Could not convert response to data")
-        }
-
-        do {
-            let decoder = JSONDecoder()
-            let analysis = try decoder.decode(TaskAIAnalysis.self, from: data)
-            return analysis
-        } catch {
-            throw GroqError.decodingError(error.localizedDescription)
-        }
-    }
-
-    /// Generate AI questions for user decisions
-    func generateDecisionQuestions(
-        context: String,
-        topic: String
-    ) async throws -> [AIQuestion] {
-        let systemPrompt = """
-        Generate 2-4 decision questions to help clarify user intent for an AI to act autonomously.
-        Each question should:
-        - Be specific and actionable
-        - Have 2-4 clear options
-        - Help the AI understand what the user wants
-
-        Return ONLY valid JSON:
-        {
-          "questions": [
-            {
-              "question": "The question text?",
-              "options": [
-                {"label": "Option 1", "description": "What this means"},
-                {"label": "Option 2", "description": "What this means"}
-              ],
-              "priority": "important"
-            }
-          ]
-        }
-        """
-
-        let userPrompt = """
-        Context: \(context)
-        Topic: \(topic)
-
-        Generate decision questions to clarify user preferences.
-        """
-
-        let responseText = try await makeRequest(
-            systemPrompt: systemPrompt,
-            userPrompt: userPrompt,
-            temperature: 0.7,
-            maxTokens: 800,
-            requireJSON: true
-        )
-
-        struct QuestionsResponse: Codable {
-            struct QuestionData: Codable {
-                let question: String
-                let options: [OptionData]
-                let priority: String
-            }
-            struct OptionData: Codable {
-                let label: String
-                let description: String?
-            }
-            let questions: [QuestionData]
-        }
-
-        guard let data = responseText.data(using: .utf8) else {
-            throw GroqError.decodingError("Could not convert response to data")
-        }
-
-        let response = try JSONDecoder().decode(QuestionsResponse.self, from: data)
-
-        return response.questions.map { q in
-            AIQuestion(
-                goalId: UUID(), // Will be set by caller
-                question: q.question,
-                options: q.options.map { QuestionOption(label: $0.label, description: $0.description) },
-                priority: QuestionPriority(rawValue: q.priority) ?? .important
-            )
-        }
-    }
-
-    /// Generate a tool prompt for external tools
     func generateToolPrompt(
         tool: String,
         context: String,
@@ -1227,7 +1289,7 @@ enum MessageIntent: String {
 
 enum MessageEvent: String {
     case taskCompleted = "User completed a task"
-    case allTasksCompleted = "User completed all 3 daily tasks"
+    case allTasksCompleted = "User completed all daily tasks"
     case streakMilestone = "User reached a streak milestone"
     case weekCompleted = "User completed a full week"
     case goalProgress = "User made significant progress on their goal"

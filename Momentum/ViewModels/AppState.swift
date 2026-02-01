@@ -10,25 +10,40 @@ import Combine
 
 @MainActor
 class AppState: ObservableObject {
-    // MARK: - Published Properties
+    // MARK: - Published State
+
     @Published var isOnboarded: Bool = false
     @Published var currentUser: MomentumUser?
+    @Published var goals: [Goal] = []
+    @Published var achievements: [Achievement] = []
 
-    // Goal State
-    @Published var activeProjectGoal: Goal?
-    @Published var archivedGoals: [Goal] = []
+    // AI Feed System
+    @Published var aiFeedItems: [AIFeedItem] = []
+    @Published var pendingSkillQuestions: [SkillQuestion] = []
+    @Published var pendingQuestionnaires: [AIQuestionnaire] = []
+    @Published var pendingToolPrompts: [ToolPrompt] = []
+    @Published var aiReports: [AIReport] = []
+    @Published var isEvaluatingTasks: Bool = false
 
-    // Today's Content
-    @Published var todaysTasks: [MomentumTask] = []      // Project tasks (3)
+    // User Skills & Preferences
+    @Published var userSkills: [String: String] = [:]
+    @Published var userPreferences: UserPreferences = UserPreferences()
+
+    // Knowledge Base
+    @Published var knowledgeBase: [KnowledgeBaseEntry] = []
 
     // UI State
     @Published var selectedTab: Tab = .home
     @Published var showTaskCompletionCelebration: Bool = false
     @Published var showAllTasksCompleteCelebration: Bool = false
     @Published var completedTaskMessage: String = ""
+    @Published var isLoading: Bool = false
+    @Published var errorMessage: String?
 
     // AI Service
     private let groqService = GroqService.shared
+    private var cancellables = Set<AnyCancellable>()
+    private var lastEvaluationDate: Date?
 
     // MARK: - Tab Enum
     enum Tab: String, CaseIterable {
@@ -47,271 +62,621 @@ class AppState: ObservableObject {
         }
     }
 
+    // MARK: - Persistence Keys
+    private enum StorageKeys {
+        static let isOnboarded = "hasCompletedOnboarding"
+        static let currentUser = "savedUser"
+        static let goals = "savedGoals"
+        static let achievements = "savedAchievements"
+        static let userSkills = "userSkills"
+        static let userPreferences = "userPreferences"
+        static let knowledgeBase = "knowledgeBase"
+        static let pendingSkillQuestions = "pendingSkillQuestions"
+        static let pendingQuestionnaires = "pendingQuestionnaires"
+        static let pendingToolPrompts = "pendingToolPrompts"
+        static let aiReports = "aiReports"
+        static let migrationVersion = "migrationVersion"
+    }
+
     // MARK: - Initialization
     init() {
-        loadUserData()
+        loadState()
+        setupAutoSave()
     }
 
-    // MARK: - User Data
-    func loadUserData() {
-        // Check if user has completed onboarding
-        isOnboarded = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
+    // MARK: - Computed Properties
 
-        if isOnboarded {
-            // Load mock user data for now
-            loadMockData()
-            // Migrate tasks if needed
-            migrateTasksIfNeeded()
-            // Load AI data
-            loadAIData()
+    var activeGoal: Goal? {
+        goals.first { $0.status == .active }
+    }
+
+    var currentMilestone: Milestone? {
+        guard let goal = activeGoal else { return nil }
+        let index = goal.currentMilestoneIndex
+        guard index < goal.milestones.count else { return nil }
+        return goal.milestones[index]
+    }
+
+    var todaysTasks: [MomentumTask] {
+        guard let milestone = currentMilestone else { return [] }
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+
+        return milestone.tasks.filter { task in
+            task.status == .pending &&
+            calendar.startOfDay(for: task.scheduledDate) <= today
+        }.sorted { $0.scheduledDate < $1.scheduledDate }
+    }
+
+    var completedTodaysTasks: [MomentumTask] {
+        guard let milestone = currentMilestone else { return [] }
+        let calendar = Calendar.current
+        return milestone.tasks.filter { task in
+            task.status == .completed &&
+            calendar.isDateInToday(task.completedAt ?? Date.distantPast)
         }
     }
+
+    var hasMorePendingTasks: Bool {
+        guard let milestone = currentMilestone else { return false }
+        return milestone.tasks.contains { $0.status == .pending }
+    }
+
+    var streakCount: Int {
+        currentUser?.streakCount ?? 0
+    }
+
+    var currentMilestoneProgress: Double {
+        currentMilestone?.completionPercentage ?? 0
+    }
+
+    // MARK: - State Management
+
+    private func loadState() {
+        let defaults = UserDefaults.standard
+
+        runMigrations()
+
+        isOnboarded = defaults.bool(forKey: StorageKeys.isOnboarded)
+
+        if let userData = defaults.data(forKey: StorageKeys.currentUser),
+           let user = try? JSONDecoder().decode(MomentumUser.self, from: userData) {
+            currentUser = user
+        }
+
+        if let goalsData = defaults.data(forKey: StorageKeys.goals),
+           let loadedGoals = try? JSONDecoder().decode([Goal].self, from: goalsData) {
+            goals = loadedGoals
+        }
+
+        if let achievementsData = defaults.data(forKey: StorageKeys.achievements),
+           let loadedAchievements = try? JSONDecoder().decode([Achievement].self, from: achievementsData) {
+            achievements = loadedAchievements
+        }
+
+        if let skillsData = defaults.data(forKey: StorageKeys.userSkills),
+           let loadedSkills = try? JSONDecoder().decode([String: String].self, from: skillsData) {
+            userSkills = loadedSkills
+        }
+
+        if let prefsData = defaults.data(forKey: StorageKeys.userPreferences),
+           let loadedPrefs = try? JSONDecoder().decode(UserPreferences.self, from: prefsData) {
+            userPreferences = loadedPrefs
+        }
+
+        if let kbData = defaults.data(forKey: StorageKeys.knowledgeBase),
+           let loadedKB = try? JSONDecoder().decode([KnowledgeBaseEntry].self, from: kbData) {
+            knowledgeBase = loadedKB
+        }
+
+        if let sqData = defaults.data(forKey: StorageKeys.pendingSkillQuestions),
+           let loadedSQ = try? JSONDecoder().decode([SkillQuestion].self, from: sqData) {
+            pendingSkillQuestions = loadedSQ
+        }
+
+        if let qaData = defaults.data(forKey: StorageKeys.pendingQuestionnaires),
+           let loadedQA = try? JSONDecoder().decode([AIQuestionnaire].self, from: qaData) {
+            pendingQuestionnaires = loadedQA
+        }
+
+        if let tpData = defaults.data(forKey: StorageKeys.pendingToolPrompts),
+           let loadedTP = try? JSONDecoder().decode([ToolPrompt].self, from: tpData) {
+            pendingToolPrompts = loadedTP
+        }
+
+        if let reportsData = defaults.data(forKey: StorageKeys.aiReports),
+           let loadedReports = try? JSONDecoder().decode([AIReport].self, from: reportsData) {
+            aiReports = loadedReports
+        }
+
+        refreshAIFeed()
+    }
+
+    private func saveState() {
+        let defaults = UserDefaults.standard
+        let encoder = JSONEncoder()
+
+        defaults.set(isOnboarded, forKey: StorageKeys.isOnboarded)
+
+        if let user = currentUser, let data = try? encoder.encode(user) {
+            defaults.set(data, forKey: StorageKeys.currentUser)
+        }
+
+        if let data = try? encoder.encode(goals) {
+            defaults.set(data, forKey: StorageKeys.goals)
+        }
+
+        if let data = try? encoder.encode(achievements) {
+            defaults.set(data, forKey: StorageKeys.achievements)
+        }
+
+        if let data = try? encoder.encode(userSkills) {
+            defaults.set(data, forKey: StorageKeys.userSkills)
+        }
+
+        if let data = try? encoder.encode(userPreferences) {
+            defaults.set(data, forKey: StorageKeys.userPreferences)
+        }
+
+        if let data = try? encoder.encode(knowledgeBase) {
+            defaults.set(data, forKey: StorageKeys.knowledgeBase)
+        }
+
+        if let data = try? encoder.encode(pendingSkillQuestions) {
+            defaults.set(data, forKey: StorageKeys.pendingSkillQuestions)
+        }
+
+        if let data = try? encoder.encode(pendingQuestionnaires) {
+            defaults.set(data, forKey: StorageKeys.pendingQuestionnaires)
+        }
+
+        if let data = try? encoder.encode(pendingToolPrompts) {
+            defaults.set(data, forKey: StorageKeys.pendingToolPrompts)
+        }
+
+        if let data = try? encoder.encode(aiReports) {
+            defaults.set(data, forKey: StorageKeys.aiReports)
+        }
+    }
+
+    private func setupAutoSave() {
+        $goals
+            .dropFirst()
+            .debounce(for: .seconds(0.5), scheduler: RunLoop.main)
+            .sink { [weak self] _ in self?.saveState() }
+            .store(in: &cancellables)
+
+        $currentUser
+            .dropFirst()
+            .debounce(for: .seconds(0.5), scheduler: RunLoop.main)
+            .sink { [weak self] _ in self?.saveState() }
+            .store(in: &cancellables)
+
+        $userSkills
+            .dropFirst()
+            .debounce(for: .seconds(0.5), scheduler: RunLoop.main)
+            .sink { [weak self] _ in self?.saveState() }
+            .store(in: &cancellables)
+    }
+
+    // MARK: - Migration
+
+    private func runMigrations() {
+        let defaults = UserDefaults.standard
+        let currentVersion = defaults.integer(forKey: StorageKeys.migrationVersion)
+
+        if currentVersion < 4 {
+            migrateToMilestoneSystem()
+            defaults.set(4, forKey: StorageKeys.migrationVersion)
+        }
+    }
+
+    private func migrateToMilestoneSystem() {
+        print("Running migration to Milestone system (v4)")
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: "savedProjectGoal")
+        defaults.removeObject(forKey: "savedGoal")
+        defaults.removeObject(forKey: "savedArchivedGoals")
+    }
+
+    // MARK: - Onboarding
 
     func completeOnboarding(with goal: Goal) {
+        let userId = goal.userId
+        currentUser = MomentumUser(
+            id: userId,
+            email: "user@momentum.app",
+            preferences: userPreferences
+        )
+
+        goals = [goal]
         isOnboarded = true
-        UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+        saveState()
 
-        // Create user
-        currentUser = MomentumUser(email: "user@example.com")
-
-        // Set the project goal
-        activeProjectGoal = goal
-
-        // Persist
-        saveAllGoals()
-        saveUser(currentUser!)
-
-        // Load today's content
-        loadTodaysContent()
-
-        // Trigger AI processing for initial tasks
         Task {
-            await triggerInitialAIProcessing()
+            await evaluateTodaysTasks()
         }
     }
 
-    /// Trigger AI processing for all initial tasks after onboarding
-    private func triggerInitialAIProcessing() async {
-        guard let goal = activeProjectGoal else { return }
+    // MARK: - AI Feed Management
 
-        // Process each of today's tasks for AI analysis
-        for task in todaysTasks {
-            await aiProcessor.processNewTask(task, goal: goal)
+    func refreshAIFeed() {
+        var items: [AIFeedItem] = []
+
+        for question in pendingSkillQuestions where question.answer == nil {
+            items.append(.skillQuestion(question))
         }
 
-        // Save AI data after processing
-        saveAIData()
+        for questionnaire in pendingQuestionnaires where !questionnaire.isCompleted {
+            items.append(.questionnaire(questionnaire))
+        }
+
+        for report in aiReports.prefix(3) {
+            items.append(.report(report))
+        }
+
+        for prompt in pendingToolPrompts {
+            items.append(.toolPrompt(prompt))
+        }
+
+        aiFeedItems = items.sorted { $0.priority < $1.priority }
     }
 
-    func loadMockData() {
-        // Try to load persisted data first
-        loadAllGoals()
+    // MARK: - Daily Task Evaluation
 
-        if let savedUser = loadUser() {
-            currentUser = savedUser
-            loadTodaysContent()
-        } else {
-            // Fallback to mock data
-            currentUser = MockDataService.shared.mockUser
-            activeProjectGoal = MockDataService.shared.mockGoal
-            todaysTasks = MockDataService.shared.todaysTasks
+    func evaluateTodaysTasks() async {
+        guard !todaysTasks.isEmpty else { return }
+
+        let calendar = Calendar.current
+        if let lastEval = lastEvaluationDate, calendar.isDateInToday(lastEval) {
+            return
+        }
+
+        isEvaluatingTasks = true
+
+        do {
+            let goalContext = activeGoal?.visionRefined ?? activeGoal?.visionText ?? ""
+            let evaluations = try await groqService.evaluateTodaysTasks(
+                tasks: todaysTasks,
+                userSkills: userSkills,
+                goalContext: goalContext
+            )
+
+            for (index, evaluation) in evaluations.enumerated() {
+                guard index < todaysTasks.count else { break }
+                let task = todaysTasks[index]
+
+                let approach = TaskApproach(rawValue: evaluation.approach) ?? .userDirect
+                let aiEvaluation = TaskAIEvaluation(
+                    canAIDo: evaluation.canAIDo,
+                    canUserDo: evaluation.canUserDo,
+                    skillsRequired: evaluation.skillsRequired,
+                    approach: approach,
+                    guidanceNeeded: evaluation.guidanceNeeded
+                )
+
+                updateTaskEvaluation(taskId: task.id, evaluation: aiEvaluation)
+
+                if let skillQuestions = evaluation.skillQuestions {
+                    for sq in skillQuestions where userSkills[sq.skill] == nil {
+                        let question = SkillQuestion(
+                            taskId: task.id,
+                            skill: sq.skill,
+                            question: sq.question,
+                            options: sq.options
+                        )
+                        pendingSkillQuestions.append(question)
+                    }
+                }
+
+                if let toolSuggestion = evaluation.toolSuggestion {
+                    Task {
+                        do {
+                            let prompt = try await groqService.generateToolPromptForTask(
+                                task: task,
+                                tool: toolSuggestion.toolName,
+                                userSkillLevel: userSkills[toolSuggestion.toolName.lowercased()],
+                                goalContext: goalContext
+                            )
+                            pendingToolPrompts.append(prompt)
+                            refreshAIFeed()
+                        } catch {
+                            print("Failed to generate tool prompt: \(error)")
+                        }
+                    }
+                }
+
+                if evaluation.guidanceNeeded {
+                    Task {
+                        do {
+                            let questionnaire = try await groqService.generateGuidanceQuestionnaire(
+                                task: task,
+                                goalContext: goalContext
+                            )
+                            pendingQuestionnaires.append(questionnaire)
+                            refreshAIFeed()
+                        } catch {
+                            print("Failed to generate questionnaire: \(error)")
+                        }
+                    }
+                }
+            }
+
+            lastEvaluationDate = Date()
+            refreshAIFeed()
+
+        } catch {
+            print("Failed to evaluate tasks: \(error)")
+        }
+
+        isEvaluatingTasks = false
+    }
+
+    private func updateTaskEvaluation(taskId: UUID, evaluation: TaskAIEvaluation) {
+        guard let goalIndex = goals.firstIndex(where: { goal in
+            goal.milestones.contains { $0.tasks.contains { $0.id == taskId } }
+        }),
+        let milestoneIndex = goals[goalIndex].milestones.firstIndex(where: { $0.tasks.contains { $0.id == taskId } }),
+        let taskIndex = goals[goalIndex].milestones[milestoneIndex].tasks.firstIndex(where: { $0.id == taskId })
+        else { return }
+
+        goals[goalIndex].milestones[milestoneIndex].tasks[taskIndex].aiEvaluation = evaluation
+    }
+
+    // MARK: - Skill Question Handling
+
+    func submitSkillAnswer(_ question: SkillQuestion, answer: String) {
+        userSkills[question.skill] = answer
+
+        if let index = pendingSkillQuestions.firstIndex(where: { $0.id == question.id }) {
+            pendingSkillQuestions[index].answer = answer
+            pendingSkillQuestions[index].answeredAt = Date()
+        }
+
+        userPreferences.userSkills[question.skill] = answer
+        refreshAIFeed()
+
+        Task {
+            await evaluateTodaysTasks()
         }
     }
 
-    // MARK: - Persistence
+    // MARK: - Questionnaire Handling
 
-    /// Save all goals to UserDefaults
-    func saveAllGoals() {
-        // Save project goal
-        if let project = activeProjectGoal,
-           let encoded = try? JSONEncoder().encode(project) {
-            UserDefaults.standard.set(encoded, forKey: "savedProjectGoal")
+    func submitQuestionnaireAnswer(_ questionnaire: AIQuestionnaire, questionId: UUID, answer: String) {
+        guard let qIndex = pendingQuestionnaires.firstIndex(where: { $0.id == questionnaire.id }) else { return }
+
+        if let bqIndex = pendingQuestionnaires[qIndex].questions.firstIndex(where: { $0.id == questionId }) {
+            pendingQuestionnaires[qIndex].questions[bqIndex].answer = answer
         }
 
-        // Save archived goals
-        if let encoded = try? JSONEncoder().encode(archivedGoals) {
-            UserDefaults.standard.set(encoded, forKey: "savedArchivedGoals")
+        let allAnswered = pendingQuestionnaires[qIndex].questions.allSatisfy { $0.answer != nil }
+        if allAnswered {
+            pendingQuestionnaires[qIndex].isCompleted = true
+
+            let entry = KnowledgeBaseEntry(
+                goalId: activeGoal?.id ?? UUID(),
+                type: .brainstorm,
+                title: questionnaire.title,
+                content: pendingQuestionnaires[qIndex].questions.map { "Q: \($0.question)\nA: \($0.answer ?? "")" }.joined(separator: "\n\n"),
+                tags: ["questionnaire", "brainstorm"]
+            )
+            addToKnowledgeBase(entry)
         }
+
+        refreshAIFeed()
     }
 
-    /// Load all goals from UserDefaults
-    private func loadAllGoals() {
-        // Load project goal
-        if let data = UserDefaults.standard.data(forKey: "savedProjectGoal"),
-           let project = try? JSONDecoder().decode(Goal.self, from: data) {
-            activeProjectGoal = project
-        }
+    // MARK: - Knowledge Base
 
-        // Load archived goals
-        if let data = UserDefaults.standard.data(forKey: "savedArchivedGoals"),
-           let archived = try? JSONDecoder().decode([Goal].self, from: data) {
-            archivedGoals = archived
-        }
+    func addToKnowledgeBase(_ entry: KnowledgeBaseEntry) {
+        knowledgeBase.append(entry)
+        saveState()
     }
 
-    /// Save a goal
-    func saveGoal(_ goal: Goal) {
-        activeProjectGoal = goal
-        saveAllGoals()
-    }
-
-    /// Legacy: Load goal from old format (for migration)
-    private func loadLegacyGoal() -> Goal? {
-        if let data = UserDefaults.standard.data(forKey: "savedGoal"),
-           let goal = try? JSONDecoder().decode(Goal.self, from: data) {
-            return goal
+    func searchKnowledgeBase(query: String) -> [KnowledgeBaseEntry] {
+        let lowercaseQuery = query.lowercased()
+        return knowledgeBase.filter { entry in
+            entry.title.lowercased().contains(lowercaseQuery) ||
+            entry.content.lowercased().contains(lowercaseQuery) ||
+            entry.tags.contains { $0.lowercased().contains(lowercaseQuery) }
         }
-        return nil
-    }
-
-    func saveUser(_ user: MomentumUser) {
-        if let encoded = try? JSONEncoder().encode(user) {
-            UserDefaults.standard.set(encoded, forKey: "savedUser")
-        }
-    }
-
-    private func loadUser() -> MomentumUser? {
-        if let data = UserDefaults.standard.data(forKey: "savedUser"),
-           let user = try? JSONDecoder().decode(MomentumUser.self, from: data) {
-            return user
-        }
-        return nil
     }
 
     // MARK: - Task Management
 
-    /// Load all content for today (project tasks, habit check-ins, identity task)
-    /// Tasks are loaded with rollover: pending tasks from today or earlier appear first,
-    /// capped at 3 tasks maximum. Oldest tasks by scheduledDate take priority.
-    func loadTodaysContent() {
-        let today = Calendar.current.startOfDay(for: Date())
-
-        // Load project tasks: pending tasks scheduled for today or earlier, max 3
-        if let projectGoal = activeProjectGoal,
-           let currentPowerGoal = projectGoal.powerGoals.first(where: { $0.status == .active }),
-           let currentMilestone = currentPowerGoal.weeklyMilestones.first(where: { $0.status == .inProgress }) {
-
-            // Get all pending tasks scheduled for today or before (rollover logic)
-            let pendingTasks = currentMilestone.tasks.filter {
-                $0.status == .pending &&
-                Calendar.current.startOfDay(for: $0.scheduledDate) <= today
-            }
-
-            // Sort by scheduledDate (oldest first) and take max 3
-            todaysTasks = Array(
-                pendingTasks.sorted { $0.scheduledDate < $1.scheduledDate }.prefix(3)
-            )
-        } else {
-            todaysTasks = []
-        }
-
-    }
-
-    /// Legacy method for backward compatibility
-    func loadTodaysTasks() {
-        loadTodaysContent()
-    }
-
-    /// Load the next batch of tasks (for working ahead after completing today's tasks)
-    /// Gets the next 3 pending tasks from the active milestone, regardless of scheduledDate
-    func loadNextTasks() {
-        if let projectGoal = activeProjectGoal,
-           let currentPowerGoal = projectGoal.powerGoals.first(where: { $0.status == .active }),
-           let currentMilestone = currentPowerGoal.weeklyMilestones.first(where: { $0.status == .inProgress }) {
-
-            // Get all pending tasks, sorted by scheduledDate
-            let pendingTasks = currentMilestone.tasks
-                .filter { $0.status == .pending }
-                .sorted { $0.scheduledDate < $1.scheduledDate }
-
-            // Take the next 3
-            todaysTasks = Array(pendingTasks.prefix(3))
-        }
-    }
-
-    /// Check if there are more pending tasks available after completing current ones
-    var hasMorePendingTasks: Bool {
-        guard let projectGoal = activeProjectGoal,
-              let currentPowerGoal = projectGoal.powerGoals.first(where: { $0.status == .active }),
-              let currentMilestone = currentPowerGoal.weeklyMilestones.first(where: { $0.status == .inProgress }) else {
-            return false
-        }
-
-        let pendingCount = currentMilestone.tasks.filter { $0.status == .pending }.count
-        return pendingCount > 0
-    }
-
-
     func completeTask(_ task: MomentumTask) {
-        guard let index = todaysTasks.firstIndex(where: { $0.id == task.id }) else { return }
+        guard let goalIndex = goals.firstIndex(where: { $0.milestones.contains { $0.tasks.contains { $0.id == task.id } } }),
+              let milestoneIndex = goals[goalIndex].milestones.firstIndex(where: { $0.tasks.contains { $0.id == task.id } }),
+              let taskIndex = goals[goalIndex].milestones[milestoneIndex].tasks.firstIndex(where: { $0.id == task.id })
+        else { return }
 
-        var updatedTask = task
-        updatedTask.status = .completed
-        updatedTask.completedAt = Date()
-        todaysTasks[index] = updatedTask
+        goals[goalIndex].milestones[milestoneIndex].tasks[taskIndex].status = .completed
+        goals[goalIndex].milestones[milestoneIndex].tasks[taskIndex].completedAt = Date()
 
-        // Update the task in the goal structure
-        updateTaskInGoal(updatedTask)
-
-        // Update streak
+        updateMilestoneProgress(goalIndex: goalIndex, milestoneIndex: milestoneIndex)
         updateStreak()
-
-        // Get personalized AI message
+        checkAchievements()
         getPersonalizedCompletionMessage(forTask: task)
 
-        // Check if all tasks are complete
         let allComplete = todaysTasks.allSatisfy { $0.status == .completed }
-        if allComplete {
+        if allComplete && !hasMorePendingTasks {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                 self.showAllTasksCompleteCelebration = true
             }
         }
 
-        // Hide celebration after delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            self.showTaskCompletionCelebration = false
-        }
+        SoundManager.shared.successHaptic()
     }
 
     func uncompleteTask(_ task: MomentumTask) {
-        guard let index = todaysTasks.firstIndex(where: { $0.id == task.id }) else { return }
+        guard let goalIndex = goals.firstIndex(where: { $0.milestones.contains { $0.tasks.contains { $0.id == task.id } } }),
+              let milestoneIndex = goals[goalIndex].milestones.firstIndex(where: { $0.tasks.contains { $0.id == task.id } }),
+              let taskIndex = goals[goalIndex].milestones[milestoneIndex].tasks.firstIndex(where: { $0.id == task.id })
+        else { return }
 
-        var updatedTask = task
-        updatedTask.status = .pending
-        updatedTask.completedAt = nil
-        todaysTasks[index] = updatedTask
+        goals[goalIndex].milestones[milestoneIndex].tasks[taskIndex].status = .pending
+        goals[goalIndex].milestones[milestoneIndex].tasks[taskIndex].completedAt = nil
 
-        // Update the task in the goal structure
-        updateTaskInGoal(updatedTask)
+        updateMilestoneProgress(goalIndex: goalIndex, milestoneIndex: milestoneIndex)
     }
 
     func updateTaskInGoal(_ task: MomentumTask) {
-        // Try project goal
-        if var goal = activeProjectGoal {
-            for (pgIndex, powerGoal) in goal.powerGoals.enumerated() {
-                for (wmIndex, milestone) in powerGoal.weeklyMilestones.enumerated() {
-                    if let taskIndex = milestone.tasks.firstIndex(where: { $0.id == task.id }) {
-                        goal.powerGoals[pgIndex].weeklyMilestones[wmIndex].tasks[taskIndex] = task
-                        activeProjectGoal = goal
-                        saveAllGoals()
-                        return
-                    }
-                }
-            }
+        guard let goalIndex = goals.firstIndex(where: { $0.milestones.contains { $0.tasks.contains { $0.id == task.id } } }),
+              let milestoneIndex = goals[goalIndex].milestones.firstIndex(where: { $0.tasks.contains { $0.id == task.id } }),
+              let taskIndex = goals[goalIndex].milestones[milestoneIndex].tasks.firstIndex(where: { $0.id == task.id })
+        else { return }
+
+        goals[goalIndex].milestones[milestoneIndex].tasks[taskIndex] = task
+    }
+
+    func toggleChecklistItem(taskId: UUID, checklistItemId: UUID) {
+        guard let goalIndex = goals.firstIndex(where: { $0.milestones.contains { $0.tasks.contains { $0.id == taskId } } }),
+              let milestoneIndex = goals[goalIndex].milestones.firstIndex(where: { $0.tasks.contains { $0.id == taskId } }),
+              let taskIndex = goals[goalIndex].milestones[milestoneIndex].tasks.firstIndex(where: { $0.id == taskId }),
+              let checklistIndex = goals[goalIndex].milestones[milestoneIndex].tasks[taskIndex].checklist.firstIndex(where: { $0.id == checklistItemId })
+        else { return }
+
+        goals[goalIndex].milestones[milestoneIndex].tasks[taskIndex].checklist[checklistIndex].isCompleted.toggle()
+    }
+
+    private func updateMilestoneProgress(goalIndex: Int, milestoneIndex: Int) {
+        let milestone = goals[goalIndex].milestones[milestoneIndex]
+        let totalTasks = milestone.tasks.count
+        guard totalTasks > 0 else { return }
+
+        let completedTasks = milestone.tasks.filter { $0.status == .completed }.count
+        let percentage = Double(completedTasks) / Double(totalTasks) * 100
+
+        goals[goalIndex].milestones[milestoneIndex].completionPercentage = percentage
+
+        if completedTasks == totalTasks {
+            goals[goalIndex].milestones[milestoneIndex].status = .completed
+            goals[goalIndex].milestones[milestoneIndex].completedAt = Date()
+            advanceToNextMilestone(goalIndex: goalIndex)
         }
 
-        // Identity tasks don't need to be saved in goal structure (they're generated daily)
-        // Habit check-ins are handled separately
+        updateGoalProgress(goalIndex: goalIndex)
+    }
+
+    private func advanceToNextMilestone(goalIndex: Int) {
+        let nextIndex = goals[goalIndex].currentMilestoneIndex + 1
+
+        if nextIndex < goals[goalIndex].milestones.count {
+            goals[goalIndex].currentMilestoneIndex = nextIndex
+            goals[goalIndex].milestones[nextIndex].status = .active
+            goals[goalIndex].milestones[nextIndex].startedAt = Date()
+
+            Task { await generateWeeklyTasks() }
+        } else {
+            goals[goalIndex].status = .completed
+        }
+    }
+
+    private func updateGoalProgress(goalIndex: Int) {
+        let milestones = goals[goalIndex].milestones
+        let completed = milestones.filter { $0.status == .completed }.count
+        guard !milestones.isEmpty else { return }
+        goals[goalIndex].completionPercentage = Double(completed) / Double(milestones.count) * 100
+    }
+
+    // MARK: - Weekly Task Generation
+
+    func generateWeeklyTasks() async {
+        guard let goal = activeGoal, let milestone = currentMilestone else { return }
+
+        isLoading = true
+
+        do {
+            let completedTasks = milestone.tasks.filter { $0.status == .completed }
+            let goalContext = goal.visionRefined ?? goal.visionText
+
+            let generatedTasks = try await groqService.generateWeeklyTasks(
+                milestone: milestone,
+                weeklyTimeBudget: userPreferences.weeklyTimeMinutes,
+                availableDays: userPreferences.availableDays,
+                userSkills: userSkills,
+                previousTasks: completedTasks,
+                goalContext: goalContext
+            )
+
+            let calendar = Calendar.current
+            let today = Date()
+            let weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: today)) ?? today
+
+            var newTasks: [MomentumTask] = []
+            for generatedTask in generatedTasks {
+                let dayOffset = generatedTask.scheduledDay - 1
+                let scheduledDate = calendar.date(byAdding: .day, value: dayOffset, to: weekStart) ?? today
+
+                let checklist = generatedTask.checklist.enumerated().map { index, item in
+                    ChecklistItem(text: item.text, estimatedMinutes: item.estimatedMinutes, orderIndex: index)
+                }
+
+                let totalMinutes = checklist.reduce(0) { $0 + $1.estimatedMinutes }
+
+                let task = MomentumTask(
+                    milestoneId: milestone.id,
+                    goalId: goal.id,
+                    title: generatedTask.title,
+                    taskDescription: generatedTask.description,
+                    checklist: checklist,
+                    outcomeGoal: generatedTask.outcomeGoal,
+                    totalEstimatedMinutes: totalMinutes,
+                    scheduledDate: scheduledDate
+                )
+                newTasks.append(task)
+            }
+
+            if let goalIndex = goals.firstIndex(where: { $0.id == goal.id }),
+               let milestoneIndex = goals[goalIndex].milestones.firstIndex(where: { $0.id == milestone.id }) {
+                goals[goalIndex].milestones[milestoneIndex].tasks.append(contentsOf: newTasks)
+            }
+
+            await evaluateTodaysTasks()
+
+        } catch {
+            errorMessage = "Failed to generate weekly tasks: \(error.localizedDescription)"
+            print("Weekly task generation failed: \(error)")
+        }
+
+        isLoading = false
+    }
+
+    // MARK: - Streak Management
+
+    private func updateStreak() {
+        guard var user = currentUser else { return }
+
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+
+        if let lastCompleted = user.lastTaskCompletedAt {
+            let lastDay = calendar.startOfDay(for: lastCompleted)
+            let daysDiff = calendar.dateComponents([.day], from: lastDay, to: today).day ?? 0
+
+            if daysDiff == 1 {
+                user.streakCount += 1
+            } else if daysDiff > 1 {
+                user.streakCount = 1
+            }
+        } else {
+            user.streakCount = 1
+        }
+
+        if user.streakCount > user.longestStreak {
+            user.longestStreak = user.streakCount
+        }
+
+        user.lastTaskCompletedAt = Date()
+        currentUser = user
     }
 
     private func getPersonalizedCompletionMessage(forTask task: MomentumTask) {
         let personality = currentUser?.aiPersonality ?? .energetic
-
-        // Use default message first
         showTaskCompletionCelebration = true
         completedTaskMessage = personality.completionMessage
 
-        // Then get AI-powered message in background
         Task {
             do {
                 let message = try await groqService.getPersonalizedMessage(
@@ -319,162 +684,63 @@ class AppState: ObservableObject {
                     personality: personality,
                     context: "Task: \(task.title)"
                 )
-
-                await MainActor.run {
-                    // Only update if still showing the celebration
-                    if showTaskCompletionCelebration {
-                        completedTaskMessage = message
-                    }
+                if showTaskCompletionCelebration {
+                    completedTaskMessage = message
                 }
             } catch {
-                // Keep default message on error
                 print("Error getting AI message: \(error)")
             }
         }
-    }
 
-    func updateStreak() {
-        guard var user = currentUser else { return }
-
-        let now = Date()
-        let calendar = Calendar.current
-
-        if let lastCompleted = user.lastTaskCompletedAt {
-            let daysSinceLast = calendar.dateComponents([.day], from: lastCompleted, to: now).day ?? 0
-
-            if daysSinceLast <= 1 {
-                // Continue or start streak
-                if daysSinceLast == 1 || (daysSinceLast == 0 && !calendar.isDate(lastCompleted, inSameDayAs: now)) {
-                    user.streakCount += 1
-                }
-            } else {
-                // Streak broken
-                user.streakCount = 1
-            }
-        } else {
-            user.streakCount = 1
-        }
-
-        user.lastTaskCompletedAt = now
-        if user.streakCount > user.longestStreak {
-            user.longestStreak = user.streakCount
-        }
-
-        currentUser = user
-        saveUser(user)
-    }
-
-    // MARK: - Goal Management
-
-    /// Add a new goal
-    func addGoal(_ goal: Goal) {
-        activeProjectGoal = goal
-        saveAllGoals()
-        loadTodaysContent()
-    }
-
-    /// Archive a goal
-    func archiveGoal(_ goalId: UUID) {
-        guard activeProjectGoal?.id == goalId else { return }
-
-        var goalToArchive = activeProjectGoal
-        activeProjectGoal = nil
-
-        if var goal = goalToArchive {
-            goal.status = .archived
-            archivedGoals.append(goal)
-            saveAllGoals()
-            loadTodaysContent()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            self.showTaskCompletionCelebration = false
         }
     }
 
-    // MARK: - Progress Calculations
-    var weeklyTasksCompleted: Int {
-        // In a real app, this would query all tasks for the current week
-        todaysTasks.filter { $0.status == .completed }.count
-    }
+    // MARK: - Achievements
 
-    var weeklyTotalTasks: Int {
-        // In a real app, this would be 21 (3 tasks * 7 days)
-        21
-    }
+    private func checkAchievements() {
+        guard let user = currentUser else { return }
 
-    var currentPowerGoalProgress: Double {
-        activeProjectGoal?.powerGoals.first(where: { $0.status == .active })?.completionPercentage ?? 0
-    }
-
-    // MARK: - Weekly Points System
-    // Easy = 1pt, Medium = 2pt, Hard = 3pt
-    // Max per day = 6pts (1+2+3), Max per week = 42pts
-
-    /// Points earned this week from completed tasks
-    var weeklyPointsEarned: Int {
-        // Get start of current week (Monday)
-        let calendar = Calendar.current
-        let today = Date()
-        guard let weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: today)) else {
-            return 0
+        if user.streakCount >= 7 && !hasAchievement(.sevenDayStreak) {
+            unlockAchievement(.sevenDayStreak)
         }
 
-        var totalPoints = 0
+        if user.streakCount >= 30 && !hasAchievement(.thirtyDayStreak) {
+            unlockAchievement(.thirtyDayStreak)
+        }
 
-        // Check project goal tasks
-        if let goal = activeProjectGoal {
-            for powerGoal in goal.powerGoals {
-                for milestone in powerGoal.weeklyMilestones {
-                    for task in milestone.tasks {
-                        if task.status == .completed,
-                           let completedAt = task.completedAt,
-                           completedAt >= weekStart {
-                            totalPoints += pointsForDifficulty(task.difficulty)
-                        }
-                    }
-                }
+        if let goal = activeGoal {
+            let completedMilestones = goal.milestones.filter { $0.status == .completed }.count
+            if completedMilestones >= 1 && !hasAchievement(.firstGoalComplete) {
+                unlockAchievement(.firstGoalComplete)
             }
         }
-
-        return totalPoints
     }
 
-    /// Points for a given difficulty
-    func pointsForDifficulty(_ difficulty: TaskDifficulty) -> Int {
-        switch difficulty {
-        case .easy: return 1
-        case .medium: return 2
-        case .hard: return 3
-        }
+    private func hasAchievement(_ badgeType: BadgeType) -> Bool {
+        achievements.contains { $0.badgeType == badgeType }
     }
 
-    /// Maximum weekly points
-    var weeklyPointsMax: Int { 42 }
+    private func unlockAchievement(_ badgeType: BadgeType) {
+        guard let user = currentUser else { return }
+        achievements.append(Achievement(userId: user.id, badgeType: badgeType))
+        SoundManager.shared.successHaptic()
+    }
 
     // MARK: - Task Notes Management
 
-    /// Update notes for a specific task
     func updateTaskNotes(_ taskId: UUID, notes: TaskNotes) {
-        // Try project goal
-        if var goal = activeProjectGoal {
-            for (pgIndex, powerGoal) in goal.powerGoals.enumerated() {
-                for (wmIndex, milestone) in powerGoal.weeklyMilestones.enumerated() {
-                    if let taskIndex = milestone.tasks.firstIndex(where: { $0.id == taskId }) {
-                        var updatedNotes = notes
-                        updatedNotes.lastUpdated = Date()
-                        goal.powerGoals[pgIndex].weeklyMilestones[wmIndex].tasks[taskIndex].notes = updatedNotes
-                        activeProjectGoal = goal
-                        saveAllGoals()
+        guard let goalIndex = goals.firstIndex(where: { $0.milestones.contains { $0.tasks.contains { $0.id == taskId } } }),
+              let milestoneIndex = goals[goalIndex].milestones.firstIndex(where: { $0.tasks.contains { $0.id == taskId } }),
+              let taskIndex = goals[goalIndex].milestones[milestoneIndex].tasks.firstIndex(where: { $0.id == taskId })
+        else { return }
 
-                        // Update todaysTasks if this is one of them
-                        if let todayIndex = todaysTasks.firstIndex(where: { $0.id == taskId }) {
-                            todaysTasks[todayIndex].notes = updatedNotes
-                        }
-                        return
-                    }
-                }
-            }
-        }
+        var updatedNotes = notes
+        updatedNotes.lastUpdated = Date()
+        goals[goalIndex].milestones[milestoneIndex].tasks[taskIndex].notes = updatedNotes
     }
 
-    /// Add a conversation message to a task's notes
     func addConversationMessage(taskId: UUID, message: ConversationMessage) {
         guard let task = findTask(by: taskId) else { return }
         var notes = task.notes
@@ -482,7 +748,6 @@ class AppState: ObservableObject {
         updateTaskNotes(taskId, notes: notes)
     }
 
-    /// Add a research finding to a task's notes
     func addResearchFinding(taskId: UUID, finding: ResearchFinding) {
         guard let task = findTask(by: taskId) else { return }
         var notes = task.notes
@@ -490,74 +755,15 @@ class AppState: ObservableObject {
         updateTaskNotes(taskId, notes: notes)
     }
 
-    /// Update or create a brainstorm note for a task
-    func updateBrainstorm(taskId: UUID, brainstormId: UUID? = nil, content: String) {
-        guard let task = findTask(by: taskId) else { return }
-        var notes = task.notes
-
-        if let id = brainstormId,
-           let index = notes.userBrainstorms.firstIndex(where: { $0.id == id }) {
-            // Update existing brainstorm
-            notes.userBrainstorms[index].content = content
-            notes.userBrainstorms[index].lastModified = Date()
-        } else {
-            // Create new brainstorm
-            let brainstorm = BrainstormNote(content: content)
-            notes.userBrainstorms.append(brainstorm)
-        }
-
-        updateTaskNotes(taskId, notes: notes)
-    }
-
-    /// Delete a brainstorm note
-    func deleteBrainstorm(taskId: UUID, brainstormId: UUID) {
-        guard let task = findTask(by: taskId) else { return }
-        var notes = task.notes
-        notes.userBrainstorms.removeAll { $0.id == brainstormId }
-        updateTaskNotes(taskId, notes: notes)
-    }
-
-    /// Find a task by ID across all goals
     func findTask(by id: UUID) -> MomentumTask? {
-        // Check project goal
-        if let goal = activeProjectGoal {
-            for powerGoal in goal.powerGoals {
-                for milestone in powerGoal.weeklyMilestones {
-                    if let task = milestone.tasks.first(where: { $0.id == id }) {
-                        return task
-                    }
+        for goal in goals {
+            for milestone in goal.milestones {
+                if let task = milestone.tasks.first(where: { $0.id == id }) {
+                    return task
                 }
             }
         }
-
-        // Check today's tasks
-        if let task = todaysTasks.first(where: { $0.id == id }) {
-            return task
-        }
-
         return nil
-    }
-
-    /// Get set of task IDs that have notes (for UI indicators)
-    func tasksWithNotes() -> Set<UUID> {
-        var taskIds = Set<UUID>()
-
-        // Check project goal tasks
-        if let goal = activeProjectGoal {
-            for powerGoal in goal.powerGoals {
-                for milestone in powerGoal.weeklyMilestones {
-                    for task in milestone.tasks {
-                        if !task.notes.conversationHistory.isEmpty ||
-                           !task.notes.researchFindings.isEmpty ||
-                           !task.notes.userBrainstorms.isEmpty {
-                            taskIds.insert(task.id)
-                        }
-                    }
-                }
-            }
-        }
-
-        return taskIds
     }
 
     // MARK: - Global AI Chat State
@@ -565,177 +771,83 @@ class AppState: ObservableObject {
     @Published var showGlobalChat: Bool = false
     @Published var globalChatTaskContext: MomentumTask?
 
-    /// Open global chat with optional task context
     func openGlobalChat(withTask task: MomentumTask? = nil) {
         globalChatTaskContext = task
         showGlobalChat = true
     }
 
-    /// Close global chat
     func closeGlobalChat() {
         showGlobalChat = false
-        // Don't clear task context - preserve for next open
     }
 
-    /// Switch the task context in global chat
     func switchChatTask(_ task: MomentumTask) {
         globalChatTaskContext = task
     }
 
-    // MARK: - Data Migration
+    // MARK: - Helper Methods
 
-    /// Migrate existing tasks to include notes structure and multi-goal architecture
-    private func migrateTasksIfNeeded() {
-        let migrationVersion = UserDefaults.standard.integer(forKey: "taskNotesMigrationVersion")
-
-        if migrationVersion < 1 {
-            print("🔄 Migrating tasks to v1 (adding notes structure)...")
-            migrateV1Tasks()
-            UserDefaults.standard.set(1, forKey: "taskNotesMigrationVersion")
-            print("✅ Migration complete")
-        }
-
-        if migrationVersion < 2 {
-            print("🔄 Migrating to v2 (multi-goal architecture)...")
-            migrateToMultiGoalArchitecture()
-            UserDefaults.standard.set(2, forKey: "taskNotesMigrationVersion")
-            print("✅ Migration to v2 complete")
-        }
+    func getGoalName(for task: MomentumTask) -> String {
+        goals.first { $0.id == task.goalId }?.visionRefined ?? goals.first { $0.id == task.goalId }?.visionText ?? "Goal"
     }
 
-    private func migrateV1Tasks() {
-        guard let goal = activeProjectGoal else { return }
-        var needsSave = false
-
-        for (_, powerGoal) in goal.powerGoals.enumerated() {
-            for (_, milestone) in powerGoal.weeklyMilestones.enumerated() {
-                for (_, _) in milestone.tasks.enumerated() {
-                    // Tasks created with new init will have default TaskNotes()
-                    // This ensures any tasks loaded from old data get initialized properly
-                    // The TaskNotes init already provides empty arrays, so no action needed
-                    // Just mark that we've checked it
-                    needsSave = true
-                }
+    func getMilestoneName(for task: MomentumTask) -> String {
+        for goal in goals {
+            if let milestone = goal.milestones.first(where: { $0.id == task.milestoneId }) {
+                return milestone.title
             }
         }
-
-        if needsSave {
-            activeProjectGoal = goal
-            saveAllGoals()
-        }
+        return "Milestone"
     }
 
-    /// Migrate from single activeGoal to multi-goal architecture
-    private func migrateToMultiGoalArchitecture() {
-        // Check if there's a legacy goal saved
-        if let legacyGoal = loadLegacyGoal() {
-            print("Found legacy goal, migrating to multi-goal format...")
+    // MARK: - Reset
 
-            // Set goalType to project if not already set
-            var migratedGoal = legacyGoal
-            migratedGoal.goalType = .project
-
-            activeProjectGoal = migratedGoal
-
-            // Save in new format
-            saveAllGoals()
-            print("✅ Legacy goal migrated successfully")
-        }
-    }
-
-    // MARK: - Reset for Testing
     func resetOnboarding() {
         isOnboarded = false
-        UserDefaults.standard.set(false, forKey: "hasCompletedOnboarding")
-
-        // Clear all goal storage
-        UserDefaults.standard.removeObject(forKey: "savedGoal")
-        UserDefaults.standard.removeObject(forKey: "savedProjectGoal")
-        UserDefaults.standard.removeObject(forKey: "savedArchivedGoals")
-        UserDefaults.standard.removeObject(forKey: "savedUser")
-        UserDefaults.standard.removeObject(forKey: "savedAIQuestions")
-        UserDefaults.standard.removeObject(forKey: "savedAIWorkItems")
-
         currentUser = nil
-        activeProjectGoal = nil
-        archivedGoals = []
-        todaysTasks = []
-    }
+        goals = []
+        achievements = []
+        aiFeedItems = []
+        pendingSkillQuestions = []
+        pendingQuestionnaires = []
+        pendingToolPrompts = []
+        aiReports = []
+        userSkills = [:]
+        userPreferences = UserPreferences()
+        knowledgeBase = []
 
-    // MARK: - AI Task Processor
-
-    /// AI processor for background work
-    let aiProcessor = AITaskProcessor()
-
-    /// Get pending AI questions for the active project
-    var pendingAIQuestions: [AIQuestion] {
-        guard let projectId = activeProjectGoal?.id else { return [] }
-        return aiProcessor.pendingQuestions(for: projectId)
-    }
-
-    /// Get completed AI work items for the active project
-    var completedAIWorkItems: [AIWorkItem] {
-        guard let projectId = activeProjectGoal?.id else { return [] }
-        return aiProcessor.completedWorkItems(for: projectId)
-    }
-
-    /// Submit an answer to an AI question
-    func submitAIAnswer(questionId: UUID, answer: String) {
-        aiProcessor.submitAnswer(for: questionId, answer: answer)
-        saveAIData()
-    }
-
-    /// Queue research for a topic
-    func queueAIResearch(title: String, taskId: UUID? = nil) {
-        guard let projectId = activeProjectGoal?.id else { return }
-        aiProcessor.queueResearch(title: title, goalId: projectId, taskId: taskId)
-    }
-
-    /// Queue a tool prompt generation
-    func queueAIToolPrompt(title: String, taskId: UUID? = nil) {
-        guard let projectId = activeProjectGoal?.id else { return }
-        aiProcessor.queueToolPrompt(title: title, goalId: projectId, taskId: taskId)
-    }
-
-    /// Process pending AI work for active project
-    func processAIWork() async {
-        guard let project = activeProjectGoal else { return }
-        await aiProcessor.processAllPendingWork(for: project)
-        saveAIData()
-    }
-
-    /// Trigger AI processing for a new task
-    func triggerAIProcessing(for task: MomentumTask) async {
-        guard let project = activeProjectGoal else { return }
-        await aiProcessor.processNewTask(task, goal: project)
-        saveAIData()
-    }
-
-    // MARK: - AI Data Persistence
-
-    private func saveAIData() {
-        // Save pending questions
-        if let encoded = try? JSONEncoder().encode(aiProcessor.pendingQuestions) {
-            UserDefaults.standard.set(encoded, forKey: "savedAIQuestions")
-        }
-
-        // Save work items
-        if let encoded = try? JSONEncoder().encode(aiProcessor.completedWorkItems) {
-            UserDefaults.standard.set(encoded, forKey: "savedAIWorkItems")
+        let defaults = UserDefaults.standard
+        for key in [StorageKeys.isOnboarded, StorageKeys.currentUser, StorageKeys.goals,
+                    StorageKeys.achievements, StorageKeys.userSkills, StorageKeys.userPreferences,
+                    StorageKeys.knowledgeBase, StorageKeys.pendingSkillQuestions,
+                    StorageKeys.pendingQuestionnaires, StorageKeys.pendingToolPrompts, StorageKeys.aiReports] {
+            defaults.removeObject(forKey: key)
         }
     }
+}
 
-    func loadAIData() {
-        // Load pending questions
-        if let data = UserDefaults.standard.data(forKey: "savedAIQuestions"),
-           let questions = try? JSONDecoder().decode([AIQuestion].self, from: data) {
-            aiProcessor.pendingQuestions = questions
-        }
+// MARK: - Sound Manager
 
-        // Load work items
-        if let data = UserDefaults.standard.data(forKey: "savedAIWorkItems"),
-           let items = try? JSONDecoder().decode([AIWorkItem].self, from: data) {
-            aiProcessor.completedWorkItems = items
-        }
+class SoundManager {
+    static let shared = SoundManager()
+    private init() {}
+
+    func lightHaptic() {
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
+    }
+
+    func mediumHaptic() {
+        let generator = UIImpactFeedbackGenerator(style: .medium)
+        generator.impactOccurred()
+    }
+
+    func successHaptic() {
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
+    }
+
+    func errorHaptic() {
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.error)
     }
 }

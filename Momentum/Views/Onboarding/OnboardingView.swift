@@ -31,13 +31,29 @@ struct OnboardingView: View {
                     VisionInputView(
                         visionText: $viewModel.answers.visionText,
                         onContinue: {
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                viewModel.currentStep = .timeBudget
+                            }
+                        },
+                        onBack: {
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                viewModel.currentStep = .welcome
+                            }
+                        }
+                    )
+
+                case .timeBudget:
+                    TimeBudgetView(
+                        weeklyHours: $viewModel.answers.weeklyHours,
+                        availableDays: $viewModel.answers.availableDays,
+                        onContinue: {
                             Task {
                                 await viewModel.generateQuestions()
                             }
                         },
                         onBack: {
                             withAnimation(.easeInOut(duration: 0.3)) {
-                                viewModel.currentStep = .welcome
+                                viewModel.currentStep = .visionInput
                             }
                         }
                     )
@@ -59,7 +75,7 @@ struct OnboardingView: View {
                                 }
                             } else {
                                 withAnimation(.easeInOut(duration: 0.3)) {
-                                    viewModel.currentStep = .visionInput
+                                    viewModel.currentStep = .timeBudget
                                 }
                             }
                         }
@@ -114,6 +130,7 @@ class OnboardingViewModel: ObservableObject {
     enum OnboardingStep {
         case welcome
         case visionInput
+        case timeBudget
         case questions
         case generating
         case planPreview
@@ -181,78 +198,60 @@ class OnboardingViewModel: ObservableObject {
     private func convertToGoal(aiPlan: AIGeneratedPlan, userId: UUID) -> Goal {
         let goalId = UUID()
         let today = Date()
+        let calendar = Calendar.current
 
         // Get the start of the current week (Monday)
-        let calendar = Calendar.current
         let weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: today)) ?? today
 
-        let powerGoals = aiPlan.powerGoals.enumerated().map { index, generatedPG in
-            let powerGoalId = UUID()
+        // Convert to Milestone model (12 sequential milestones)
+        let milestones = aiPlan.milestones.enumerated().map { index, generatedMilestone in
+            let milestoneId = UUID()
 
-            // For the first (active) power goal, populate with weekly milestones and tasks
-            let weeklyMilestones: [WeeklyMilestone] = if index == 0 {
-                aiPlan.currentPowerGoal.weeklyMilestones.enumerated().map { weekIndex, generatedMilestone in
-                    let milestoneId = UUID()
+            // For the first (active) milestone, populate with tasks
+            let tasks: [MomentumTask] = if index == 0 {
+                aiPlan.firstWeekTasks.enumerated().map { taskIndex, generatedTask in
+                    // Calculate scheduled date based on available days
+                    let dayOffset = taskIndex % answers.availableDays.count
+                    let availableDay = Array(answers.availableDays.sorted())[dayOffset]
+                    let daysFromWeekStart = availableDay - 1 // availableDays uses 1=Sun, 2=Mon...
+                    let scheduledDate = calendar.date(byAdding: .day, value: daysFromWeekStart, to: weekStart) ?? weekStart
 
-                    // Calculate week start date (current week + weekIndex)
-                    let milestoneWeekStart = calendar.date(byAdding: .weekOfYear, value: weekIndex, to: weekStart) ?? weekStart
-
-                    // Convert daily tasks to MomentumTask
-                    let tasks = generatedMilestone.dailyTasks.flatMap { dailyTask in
-                        dailyTask.tasks.map { generatedTask in
-                            // Calculate scheduled date (week start + day offset)
-                            let dayOffset = dailyTask.day - 1 // day is 1-indexed
-                            let scheduledDate = calendar.date(byAdding: .day, value: dayOffset, to: milestoneWeekStart) ?? milestoneWeekStart
-
-                            // Parse difficulty
-                            let difficulty: TaskDifficulty = {
-                                switch generatedTask.difficulty.lowercased() {
-                                case "easy": return .easy
-                                case "medium": return .medium
-                                case "hard": return .hard
-                                default: return .medium
-                                }
-                            }()
-
-                            return MomentumTask(
-                                id: UUID(),
-                                weeklyMilestoneId: milestoneId,
-                                goalId: goalId,
-                                title: generatedTask.title,
-                                taskDescription: generatedTask.description,
-                                difficulty: difficulty,
-                                estimatedMinutes: generatedTask.estimatedMinutes,
-                                isAnchorTask: false,
-                                scheduledDate: scheduledDate,
-                                status: .pending
-                            )
-                        }
+                    // Create checklist items from task
+                    let checklist = generatedTask.checklist.enumerated().map { idx, item in
+                        ChecklistItem(
+                            text: item.text,
+                            estimatedMinutes: item.estimatedMinutes,
+                            isCompleted: false,
+                            orderIndex: idx
+                        )
                     }
 
-                    return WeeklyMilestone(
-                        id: milestoneId,
-                        powerGoalId: powerGoalId,
-                        weekNumber: generatedMilestone.week,
-                        milestoneText: generatedMilestone.milestone,
-                        status: weekIndex == 0 ? .inProgress : .pending,
-                        startDate: milestoneWeekStart,
-                        tasks: tasks
+                    return MomentumTask(
+                        milestoneId: milestoneId,
+                        goalId: goalId,
+                        title: generatedTask.title,
+                        taskDescription: generatedTask.description,
+                        checklist: checklist,
+                        outcomeGoal: generatedTask.outcomeGoal,
+                        totalEstimatedMinutes: checklist.reduce(0) { $0 + $1.estimatedMinutes },
+                        scheduledDate: scheduledDate,
+                        status: .pending
                     )
                 }
             } else {
                 []
             }
 
-            return PowerGoal(
-                id: powerGoalId,
+            return Milestone(
+                id: milestoneId,
                 goalId: goalId,
-                monthNumber: index + 1,
-                title: generatedPG.goal,
-                description: generatedPG.description,
+                sequenceNumber: index + 1,
+                title: generatedMilestone.title,
+                description: generatedMilestone.description,
                 status: index == 0 ? .active : .locked,
-                startDate: calendar.date(byAdding: .month, value: index, to: Date()),
                 completionPercentage: 0,
-                weeklyMilestones: weeklyMilestones
+                tasks: tasks,
+                startedAt: index == 0 ? Date() : nil
             )
         }
 
@@ -264,10 +263,11 @@ class OnboardingViewModel: ObservableObject {
             goalType: .project,
             status: .active,
             createdAt: Date(),
-            targetCompletionDate: Calendar.current.date(byAdding: .year, value: 1, to: Date()),
-            currentPowerGoalIndex: 0,
+            targetCompletionDate: calendar.date(byAdding: .year, value: 1, to: Date()),
+            currentMilestoneIndex: 0,
             completionPercentage: 0,
-            powerGoals: powerGoals
+            milestones: milestones,
+            knowledgeBase: []
         )
     }
 }
@@ -380,7 +380,7 @@ struct VisionInputView: View {
 
                 Spacer()
 
-                Text("Step 1 of 2")
+                Text("Step 1 of 3")
                     .font(MomentumFont.label())
                     .foregroundColor(.momentumTextTertiary)
             }
@@ -499,6 +499,198 @@ struct VisionInputView: View {
     }
 }
 
+// MARK: - Time Budget View
+
+struct TimeBudgetView: View {
+    @Binding var weeklyHours: Int
+    @Binding var availableDays: Set<Int>
+    let onContinue: () -> Void
+    let onBack: () -> Void
+
+    private let dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Button(action: onBack) {
+                    HStack(spacing: 4) {
+                        Ph.caretLeft.regular
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 20, height: 20)
+                        Text("Back")
+                            .font(MomentumFont.bodyMedium())
+                    }
+                    .foregroundColor(.momentumBlue)
+                }
+
+                Spacer()
+
+                Text("Step 2 of 3")
+                    .font(MomentumFont.label())
+                    .foregroundColor(.momentumTextTertiary)
+            }
+            .padding(.horizontal, MomentumSpacing.standard)
+            .padding(.top, MomentumSpacing.standard)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: MomentumSpacing.section) {
+                    // Title
+                    VStack(alignment: .leading, spacing: MomentumSpacing.tight) {
+                        Text("Your Time Commitment")
+                            .font(MomentumFont.display(28))
+                            .foregroundColor(.momentumTextPrimary)
+
+                        Text("How much time can you dedicate each week?")
+                            .font(MomentumFont.body(17))
+                            .foregroundColor(.momentumTextSecondary)
+                    }
+                    .padding(.horizontal, MomentumSpacing.standard)
+                    .padding(.top, MomentumSpacing.comfortable)
+
+                    // Weekly Hours Slider
+                    VStack(alignment: .leading, spacing: MomentumSpacing.standard) {
+                        HStack {
+                            Ph.clock.regular
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 20, height: 20)
+                                .foregroundColor(.momentumBlue)
+
+                            Text("Weekly Hours")
+                                .font(MomentumFont.headingMedium(17))
+                                .foregroundColor(.momentumTextPrimary)
+                        }
+
+                        VStack(spacing: MomentumSpacing.compact) {
+                            HStack {
+                                Text("1 hr")
+                                    .font(MomentumFont.label())
+                                    .foregroundColor(.momentumTextTertiary)
+                                Spacer()
+                                Text("20 hrs")
+                                    .font(MomentumFont.label())
+                                    .foregroundColor(.momentumTextTertiary)
+                            }
+
+                            Slider(value: Binding(
+                                get: { Double(weeklyHours) },
+                                set: { weeklyHours = Int($0) }
+                            ), in: 1...20, step: 1)
+                            .tint(.momentumBlue)
+
+                            Text("\(weeklyHours) hours per week")
+                                .font(MomentumFont.headingMedium(20))
+                                .foregroundColor(.momentumTextPrimary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, MomentumSpacing.compact)
+                                .background(Color.momentumBackgroundSecondary)
+                                .cornerRadius(MomentumRadius.small)
+                        }
+                    }
+                    .padding(MomentumSpacing.standard)
+                    .background(Color.momentumBackgroundSecondary.opacity(0.5))
+                    .cornerRadius(MomentumRadius.medium)
+                    .padding(.horizontal, MomentumSpacing.standard)
+
+                    // Available Days
+                    VStack(alignment: .leading, spacing: MomentumSpacing.standard) {
+                        HStack {
+                            Ph.calendar.regular
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 20, height: 20)
+                                .foregroundColor(.momentumBlue)
+
+                            Text("Available Days")
+                                .font(MomentumFont.headingMedium(17))
+                                .foregroundColor(.momentumTextPrimary)
+                        }
+
+                        Text("Which days work best for you?")
+                            .font(MomentumFont.body(15))
+                            .foregroundColor(.momentumTextSecondary)
+
+                        HStack(spacing: MomentumSpacing.tight) {
+                            ForEach(1...7, id: \.self) { day in
+                                Button {
+                                    if availableDays.contains(day) {
+                                        availableDays.remove(day)
+                                    } else {
+                                        availableDays.insert(day)
+                                    }
+                                    SoundManager.shared.lightHaptic()
+                                } label: {
+                                    Text(dayNames[day - 1])
+                                        .font(MomentumFont.bodyMedium(14))
+                                        .foregroundColor(availableDays.contains(day) ? .white : .momentumTextSecondary)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, MomentumSpacing.compact)
+                                        .background(
+                                            availableDays.contains(day)
+                                                ? AnyView(MomentumGradients.primary)
+                                                : AnyView(Color.momentumBackgroundSecondary)
+                                        )
+                                        .cornerRadius(MomentumRadius.small)
+                                }
+                            }
+                        }
+
+                        if availableDays.isEmpty {
+                            Text("Please select at least one day")
+                                .font(MomentumFont.label())
+                                .foregroundColor(.momentumCoral)
+                        }
+                    }
+                    .padding(MomentumSpacing.standard)
+                    .background(Color.momentumBackgroundSecondary.opacity(0.5))
+                    .cornerRadius(MomentumRadius.medium)
+                    .padding(.horizontal, MomentumSpacing.standard)
+
+                    // Time breakdown
+                    if !availableDays.isEmpty {
+                        VStack(alignment: .leading, spacing: MomentumSpacing.tight) {
+                            HStack(spacing: 6) {
+                                Ph.info.regular
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 14, height: 14)
+                                    .foregroundColor(.momentumTextTertiary)
+
+                                Text("That's about \(weeklyHours * 60 / availableDays.count) minutes per session")
+                                    .font(MomentumFont.label(14))
+                                    .foregroundColor(.momentumTextTertiary)
+                            }
+                        }
+                        .padding(.horizontal, MomentumSpacing.standard)
+                    }
+                }
+                .padding(.bottom, MomentumSpacing.large)
+            }
+
+            // Continue Button
+            Button(action: {
+                SoundManager.shared.lightHaptic()
+                onContinue()
+            }) {
+                HStack(spacing: MomentumSpacing.tight) {
+                    Text("Continue")
+                    Ph.arrowRight.regular
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 20, height: 20)
+                }
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .disabled(availableDays.isEmpty)
+            .opacity(availableDays.isEmpty ? 0.5 : 1.0)
+            .padding(.horizontal, MomentumSpacing.standard)
+            .padding(.bottom, MomentumSpacing.large)
+        }
+    }
+}
+
 // MARK: - Questions View
 
 struct QuestionsView: View {
@@ -538,7 +730,7 @@ struct QuestionsView: View {
 
                 Spacer()
 
-                Text("Step 2 of 2")
+                Text("Step 3 of 3")
                     .font(MomentumFont.label())
                     .foregroundColor(.momentumTextTertiary)
             }
@@ -967,7 +1159,7 @@ struct ProjectPlanPreview: View {
                     .clipShape(RoundedRectangle(cornerRadius: MomentumRadius.medium))
             }
 
-            // Power Goals Summary
+            // Milestones Summary
             VStack(alignment: .leading, spacing: MomentumSpacing.tight) {
                 HStack(spacing: 6) {
                     Ph.listChecks.fill
@@ -976,16 +1168,16 @@ struct ProjectPlanPreview: View {
                         .frame(width: 18, height: 18)
                         .foregroundColor(.momentumBlue)
 
-                    Text("12 Power Goals")
+                    Text("12 Milestones")
                         .font(MomentumFont.headingMedium(17))
                         .foregroundColor(.momentumTextPrimary)
                 }
 
-                Text("Monthly milestones to guide your journey")
+                Text("Sequential steps to guide your journey")
                     .font(MomentumFont.body(14))
                     .foregroundColor(.momentumTextSecondary)
 
-                ForEach(Array(plan.powerGoals.prefix(3).enumerated()), id: \.element.goal) { index, powerGoal in
+                ForEach(Array(plan.milestones.prefix(3).enumerated()), id: \.element.title) { index, milestone in
                     HStack(alignment: .top, spacing: MomentumSpacing.compact) {
                         Text("\(index + 1)")
                             .font(MomentumFont.bodyMedium(14))
@@ -997,11 +1189,11 @@ struct ProjectPlanPreview: View {
                             )
 
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(powerGoal.goal)
+                            Text(milestone.title)
                                 .font(MomentumFont.bodyMedium(16))
                                 .foregroundColor(.momentumTextPrimary)
 
-                            Text(powerGoal.description)
+                            Text(milestone.description)
                                 .font(MomentumFont.body(14))
                                 .foregroundColor(.momentumTextSecondary)
                         }
@@ -1013,8 +1205,8 @@ struct ProjectPlanPreview: View {
                     .clipShape(RoundedRectangle(cornerRadius: MomentumRadius.small))
                 }
 
-                if plan.powerGoals.count > 3 {
-                    Text("+ \(plan.powerGoals.count - 3) more power goals")
+                if plan.milestones.count > 3 {
+                    Text("+ \(plan.milestones.count - 3) more milestones")
                         .font(MomentumFont.label(14))
                         .foregroundColor(.momentumTextTertiary)
                         .padding(.leading, MomentumSpacing.large)

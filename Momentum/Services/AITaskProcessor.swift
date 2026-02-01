@@ -31,7 +31,7 @@ class AITaskProcessor: ObservableObject {
             )
 
             // Store any questions needed
-            for var question in analysis.questionsNeeded {
+            for question in analysis.questionsNeeded {
                 var mutableQuestion = question
                 // Update the goalId to match
                 mutableQuestion = AIQuestion(

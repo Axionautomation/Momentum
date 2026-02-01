@@ -79,7 +79,7 @@ struct TaskCardView: View {
 
             // Layer 3: Text content (always on top, always readable)
             VStack(alignment: .center, spacing: MomentumSpacing.standard) {
-                // Header with Goal and Time
+                // Header with Goal and Progress
                 HStack {
                     HStack(spacing: 6) {
                         Ph.folder.fill
@@ -96,7 +96,7 @@ struct TaskCardView: View {
 
                     Spacer()
 
-                    // Show checkmark for completed tasks, time for pending
+                    // Show checkmark for completed tasks, checklist progress for pending
                     if isCompleted {
                         HStack(spacing: 6) {
                             Ph.checkCircle.fill
@@ -110,11 +110,17 @@ struct TaskCardView: View {
                         .background(Color.white.opacity(0.15))
                         .cornerRadius(12)
                     } else {
+                        // Show checklist progress instead of fixed time
                         HStack(spacing: 6) {
-                            Ph.clock.fill
+                            Ph.listChecks.regular
                                 .frame(width: 16, height: 16)
-                            Text("\(task.estimatedMinutes) min")
-                                .font(MomentumFont.label())
+                            if task.checklist.isEmpty {
+                                Text("\(task.totalEstimatedMinutes) min")
+                                    .font(MomentumFont.label())
+                            } else {
+                                Text("\(task.completedChecklistCount)/\(task.checklist.count)")
+                                    .font(MomentumFont.label())
+                            }
                         }
                         .foregroundColor(showLightText ? .white.opacity(0.8) : .momentumTextSecondary)
                         .padding(.horizontal, 12)
@@ -133,8 +139,14 @@ struct TaskCardView: View {
                     .lineLimit(3)
                     .multilineTextAlignment(.center)
 
-                // Description
-                if let description = task.taskDescription {
+                // Outcome goal (instead of description)
+                if !task.outcomeGoal.isEmpty {
+                    Text(task.outcomeGoal)
+                        .font(MomentumFont.body())
+                        .foregroundColor(showLightText ? .white.opacity(0.7) : .momentumTextSecondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                } else if let description = task.taskDescription {
                     Text(description)
                         .font(MomentumFont.body())
                         .foregroundColor(showLightText ? .white.opacity(0.7) : .momentumTextSecondary)
@@ -144,15 +156,32 @@ struct TaskCardView: View {
 
                 Spacer()
 
-                // Microsteps hint
-                if !task.microsteps.isEmpty {
-                    HStack(spacing: 4) {
-                        Ph.listChecks.regular
-                            .frame(width: 18, height: 18)
-                        Text("\(task.microsteps.count) steps")
+                // Checklist progress bar (if has checklist)
+                if !task.checklist.isEmpty {
+                    VStack(spacing: 8) {
+                        // Progress bar
+                        GeometryReader { geometry in
+                            ZStack(alignment: .leading) {
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(showLightText ? Color.white.opacity(0.2) : Color.momentumBackgroundSecondary)
+                                    .frame(height: 6)
+
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(showLightText ? Color.white : Color.momentumSuccess)
+                                    .frame(width: geometry.size.width * task.checklistProgress, height: 6)
+                            }
+                        }
+                        .frame(height: 6)
+
+                        // Time remaining
+                        HStack(spacing: 4) {
+                            Ph.clock.regular
+                                .frame(width: 14, height: 14)
+                            Text("\(task.remainingMinutes) min left")
+                        }
+                        .font(MomentumFont.label())
+                        .foregroundColor(showLightText ? .white.opacity(0.7) : .momentumTextSecondary)
                     }
-                    .font(MomentumFont.bodyMedium())
-                    .foregroundColor(showLightText ? .white.opacity(0.7) : .momentumTextSecondary)
                 }
             }
             .padding(32)
@@ -176,7 +205,7 @@ struct TaskCardView: View {
         .animation(.easeIn(duration: 0.35), value: completionPopAway)
         .onTapGesture {
             onExpand()
-            SoundManager.shared.selectionHaptic()
+            SoundManager.shared.lightHaptic()
         }
         .onLongPressGesture(minimumDuration: holdDuration, maximumDistance: 25) {
             // Only complete if not already completed
@@ -236,7 +265,6 @@ struct TaskCardView: View {
 
         // Completion haptic
         SoundManager.shared.successHaptic()
-        SoundManager.shared.playPop()
 
         // Pop away animation
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
@@ -254,18 +282,18 @@ struct TaskCardView: View {
 
 #Preview {
     let sampleTask = MomentumTask(
-        weeklyMilestoneId: UUID(),
+        milestoneId: UUID(),
         goalId: UUID(),
         title: "Research competitor landing pages for inspiration",
         taskDescription: "Look at 5-10 competitor sites and note what works well",
-        difficulty: .medium,
-        estimatedMinutes: 30,
-        scheduledDate: Date(),
-        microsteps: [
-            Microstep(taskId: UUID(), stepText: "Find 5 competitor sites", orderIndex: 0),
-            Microstep(taskId: UUID(), stepText: "Screenshot best sections", orderIndex: 1),
-            Microstep(taskId: UUID(), stepText: "Note common patterns", orderIndex: 2)
-        ]
+        checklist: [
+            ChecklistItem(text: "Find 5 competitor sites", estimatedMinutes: 10, orderIndex: 0),
+            ChecklistItem(text: "Screenshot best sections", estimatedMinutes: 10, orderIndex: 1),
+            ChecklistItem(text: "Note common patterns", estimatedMinutes: 10, orderIndex: 2)
+        ],
+        outcomeGoal: "Have a document with 5 competitor examples and key takeaways",
+        totalEstimatedMinutes: 30,
+        scheduledDate: Date()
     )
 
     VStack(spacing: 16) {
@@ -278,28 +306,15 @@ struct TaskCardView: View {
 
         TaskCardView(
             task: MomentumTask(
-                weeklyMilestoneId: UUID(),
+                milestoneId: UUID(),
                 goalId: UUID(),
                 title: "Quick email check",
-                difficulty: .easy,
-                estimatedMinutes: 10,
+                checklist: [],
+                outcomeGoal: "Inbox zero",
+                totalEstimatedMinutes: 10,
                 scheduledDate: Date()
             ),
             goalName: "Daily Habits",
-            onComplete: {},
-            onExpand: {}
-        )
-
-        TaskCardView(
-            task: MomentumTask(
-                weeklyMilestoneId: UUID(),
-                goalId: UUID(),
-                title: "Complete full marketing strategy document",
-                difficulty: .hard,
-                estimatedMinutes: 60,
-                scheduledDate: Date()
-            ),
-            goalName: "Launch SaaS Product",
             onComplete: {},
             onExpand: {}
         )

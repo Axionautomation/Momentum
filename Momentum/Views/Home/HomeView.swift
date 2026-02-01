@@ -15,11 +15,6 @@ struct HomeView: View {
     @State private var showCelebration = false
     @State private var expandedTask: MomentumTask? = nil
 
-    // Calculate points for display
-    private var weeklyPoints: Int {
-        appState.weeklyPointsEarned
-    }
-
     // All tasks for today - pending first, then completed
     private var allTodayTasks: [MomentumTask] {
         appState.todaysTasks.sorted { task1, task2 in
@@ -43,12 +38,6 @@ struct HomeView: View {
         task.status == .completed || completedTaskIds.contains(task.id)
     }
 
-    private var todayPointsEarned: Int {
-        appState.todaysTasks
-            .filter { $0.status == .completed || completedTaskIds.contains($0.id) }
-            .reduce(0) { $0 + pointsForDifficulty($1.difficulty) }
-    }
-
     var body: some View {
         ZStack {
             // Background
@@ -56,28 +45,42 @@ struct HomeView: View {
                 .ignoresSafeArea()
 
             if showCelebration {
-                CelebrationView(
-                    pointsEarned: todayPointsEarned,
-                    weeklyPoints: weeklyPoints + todayPointsEarned,
-                    weeklyMax: 42,
+                AllTasksCompleteCelebrationView(
                     onDismiss: {
                         withAnimation {
                             showCelebration = false
                         }
-                        // Stay on home tab to show "work ahead" option
                     }
                 )
                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
             } else {
                 VStack(spacing: MomentumSpacing.section) {
                     // Header
-                    HeaderView(
-                        weeklyPoints: weeklyPoints,
-                        weeklyMax: 42
+                    HomeHeaderView(
+                        streakCount: appState.streakCount,
+                        milestoneProgress: appState.currentMilestoneProgress
                     )
                     .padding(.horizontal, MomentumSpacing.comfortable)
                     .padding(.top, MomentumSpacing.standard)
-                    
+
+                    // AI Feed Section (if there are items)
+                    if !appState.aiFeedItems.isEmpty {
+                        AIFeedSection(items: appState.aiFeedItems)
+                            .padding(.horizontal, MomentumSpacing.comfortable)
+                    }
+
+                    // Loading indicator during AI evaluation
+                    if appState.isEvaluatingTasks {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .momentumViolet))
+                            Text("AI is preparing your day...")
+                                .font(MomentumFont.label())
+                                .foregroundColor(.momentumTextSecondary)
+                        }
+                        .padding(.vertical, MomentumSpacing.compact)
+                    }
+
                     Spacer()
 
                     // Task cards carousel
@@ -104,7 +107,10 @@ struct HomeView: View {
                             if appState.hasMorePendingTasks {
                                 Button {
                                     completedTaskIds.removeAll()
-                                    appState.loadNextTasks()
+                                    // Load next batch of tasks
+                                    Task {
+                                        await appState.generateWeeklyTasks()
+                                    }
                                 } label: {
                                     HStack(spacing: 8) {
                                         Ph.arrowRight.bold
@@ -129,11 +135,11 @@ struct HomeView: View {
                             onComplete: { completeTask($0) },
                             onExpand: { task in expandedTask = task }
                         )
-                        .frame(height: ((UIApplication.shared.connectedScenes.first as? UIWindowScene)?.screen.bounds.height ?? 800) * 0.55)
+                        .frame(height: ((UIApplication.shared.connectedScenes.first as? UIWindowScene)?.screen.bounds.height ?? 800) * 0.50)
                     }
 
                     Spacer()
-                    
+
                     // Bottom spacing for tab bar
                     Spacer(minLength: 60)
                 }
@@ -141,6 +147,10 @@ struct HomeView: View {
         }
         .onAppear {
             appeared = true
+            // Trigger task evaluation on appear
+            Task {
+                await appState.evaluateTodaysTasks()
+            }
         }
         .sheet(item: $expandedTask) { task in
             let isTaskCompleted = task.status == .completed || completedTaskIds.contains(task.id)
@@ -161,18 +171,10 @@ struct HomeView: View {
     // MARK: - Helpers
 
     private func goalName(for task: MomentumTask) -> String {
-        if let goal = appState.activeProjectGoal, goal.id == task.goalId {
+        if let goal = appState.activeGoal, goal.id == task.goalId {
             return goal.visionRefined ?? goal.visionText
         }
-        return appState.activeProjectGoal?.visionRefined ?? appState.activeProjectGoal?.visionText ?? "Goal"
-    }
-
-    private func pointsForDifficulty(_ difficulty: TaskDifficulty) -> Int {
-        switch difficulty {
-        case .easy: return 1
-        case .medium: return 2
-        case .hard: return 3
-        }
+        return appState.activeGoal?.visionRefined ?? appState.activeGoal?.visionText ?? "Goal"
     }
 
     private func completeTask(_ task: MomentumTask) {
@@ -189,7 +191,7 @@ struct HomeView: View {
             t.status == .completed || completedTaskIds.contains(t.id)
         }
 
-        if allComplete {
+        if allComplete && !appState.hasMorePendingTasks {
             // Show celebration after brief delay
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
                 withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
@@ -200,10 +202,302 @@ struct HomeView: View {
     }
 
     private func uncompleteTask(_ task: MomentumTask) {
-        withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+        _ = withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
             completedTaskIds.remove(task.id)
         }
         appState.uncompleteTask(task)
+    }
+}
+
+// MARK: - AI Feed Section
+
+struct AIFeedSection: View {
+    let items: [AIFeedItem]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: MomentumSpacing.compact) {
+            HStack(spacing: 6) {
+                Ph.sparkle.fill
+                    .frame(width: 16, height: 16)
+                Text("AI Assistant")
+                    .font(MomentumFont.bodyMedium())
+            }
+            .foregroundColor(.momentumViolet)
+
+            ForEach(items.prefix(3)) { item in
+                AIFeedCard(item: item)
+            }
+        }
+    }
+}
+
+// MARK: - AI Feed Card
+
+struct AIFeedCard: View {
+    let item: AIFeedItem
+    @State private var showSheet = false
+    @EnvironmentObject var appState: AppState
+
+    var body: some View {
+        Button {
+            showSheet = true
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.title)
+                        .font(MomentumFont.bodyMedium())
+                        .foregroundColor(.momentumTextPrimary)
+                        .lineLimit(1)
+
+                    if let subtitle = item.subtitle {
+                        Text(subtitle)
+                            .font(MomentumFont.label())
+                            .foregroundColor(.momentumTextSecondary)
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer()
+
+                Ph.arrowRight.regular
+                    .frame(width: 16, height: 16)
+                    .foregroundColor(.momentumTextTertiary)
+            }
+            .padding(MomentumSpacing.compact)
+            .background(Color.momentumSurfacePrimary)
+            .cornerRadius(12)
+        }
+        .sheet(isPresented: $showSheet) {
+            AIFeedItemSheet(item: item)
+        }
+    }
+}
+
+// MARK: - AI Feed Item Sheet
+
+struct AIFeedItemSheet: View {
+    let item: AIFeedItem
+    @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var appState: AppState
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: MomentumSpacing.section) {
+                    switch item {
+                    case .skillQuestion(let question):
+                        skillQuestionView(question)
+                    case .toolPrompt(let prompt):
+                        toolPromptView(prompt)
+                    case .questionnaire(let questionnaire):
+                        questionnaireView(questionnaire)
+                    case .report(let report):
+                        reportView(report)
+                    }
+                }
+                .padding(MomentumSpacing.comfortable)
+            }
+            .background(Color.momentumBackground)
+            .navigationTitle(item.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func skillQuestionView(_ question: SkillQuestion) -> some View {
+        VStack(alignment: .leading, spacing: MomentumSpacing.standard) {
+            Text(question.question)
+                .font(MomentumFont.headingMedium())
+                .foregroundColor(.momentumTextPrimary)
+
+            ForEach(question.options, id: \.self) { option in
+                Button {
+                    appState.submitSkillAnswer(question, answer: option)
+                    dismiss()
+                } label: {
+                    HStack {
+                        Text(option)
+                            .font(MomentumFont.body())
+                        Spacer()
+                        Ph.arrowRight.regular
+                            .frame(width: 16, height: 16)
+                    }
+                    .foregroundColor(.momentumTextPrimary)
+                    .padding(MomentumSpacing.standard)
+                    .background(Color.momentumSurfaceSecondary)
+                    .cornerRadius(12)
+                }
+            }
+        }
+    }
+
+    private func toolPromptView(_ prompt: ToolPrompt) -> some View {
+        VStack(alignment: .leading, spacing: MomentumSpacing.standard) {
+            HStack {
+                Text("For: \(prompt.toolName)")
+                    .font(MomentumFont.bodyMedium())
+                    .foregroundColor(.momentumViolet)
+
+                Spacer()
+
+                Button {
+                    UIPasteboard.general.string = prompt.prompt
+                    SoundManager.shared.successHaptic()
+                } label: {
+                    HStack(spacing: 4) {
+                        Ph.copy.regular
+                            .frame(width: 16, height: 16)
+                        Text("Copy")
+                    }
+                    .font(MomentumFont.bodyMedium())
+                    .foregroundColor(.white)
+                    .padding(.horizontal, MomentumSpacing.standard)
+                    .padding(.vertical, MomentumSpacing.compact)
+                    .background(MomentumGradients.primary)
+                    .cornerRadius(8)
+                }
+            }
+
+            Text(prompt.context)
+                .font(MomentumFont.body())
+                .foregroundColor(.momentumTextSecondary)
+
+            Text(prompt.prompt)
+                .font(MomentumFont.body())
+                .foregroundColor(.momentumTextPrimary)
+                .padding(MomentumSpacing.standard)
+                .background(Color.momentumSurfaceSecondary)
+                .cornerRadius(12)
+        }
+    }
+
+    private func questionnaireView(_ questionnaire: AIQuestionnaire) -> some View {
+        VStack(alignment: .leading, spacing: MomentumSpacing.standard) {
+            ForEach(questionnaire.questions) { question in
+                VStack(alignment: .leading, spacing: MomentumSpacing.compact) {
+                    Text(question.question)
+                        .font(MomentumFont.bodyMedium())
+                        .foregroundColor(.momentumTextPrimary)
+
+                    if let options = question.options {
+                        ForEach(options, id: \.self) { option in
+                            Button {
+                                appState.submitQuestionnaireAnswer(questionnaire, questionId: question.id, answer: option)
+                            } label: {
+                                HStack {
+                                    Text(option)
+                                        .font(MomentumFont.body())
+                                    Spacer()
+                                    if question.answer == option {
+                                        Ph.checkCircle.fill
+                                            .frame(width: 16, height: 16)
+                                            .foregroundColor(.momentumSuccess)
+                                    }
+                                }
+                                .foregroundColor(.momentumTextPrimary)
+                                .padding(MomentumSpacing.compact)
+                                .background(question.answer == option ? Color.momentumSuccess.opacity(0.1) : Color.momentumSurfaceSecondary)
+                                .cornerRadius(8)
+                            }
+                        }
+                    } else {
+                        TextField("Your answer...", text: .constant(question.answer ?? ""))
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                    }
+                }
+                .padding(MomentumSpacing.compact)
+                .background(Color.momentumSurfacePrimary)
+                .cornerRadius(12)
+            }
+        }
+    }
+
+    private func reportView(_ report: AIReport) -> some View {
+        VStack(alignment: .leading, spacing: MomentumSpacing.standard) {
+            Text(report.summary)
+                .font(MomentumFont.body())
+                .foregroundColor(.momentumTextPrimary)
+
+            if let details = report.details {
+                Text(details)
+                    .font(MomentumFont.body())
+                    .foregroundColor(.momentumTextSecondary)
+            }
+
+            if let sources = report.sources, !sources.isEmpty {
+                VStack(alignment: .leading, spacing: MomentumSpacing.tight) {
+                    Text("Sources")
+                        .font(MomentumFont.label())
+                        .foregroundColor(.momentumTextTertiary)
+
+                    ForEach(sources, id: \.self) { source in
+                        Text(source)
+                            .font(MomentumFont.label())
+                            .foregroundColor(.momentumBlue)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - All Tasks Complete Celebration
+
+struct AllTasksCompleteCelebrationView: View {
+    let onDismiss: () -> Void
+    @EnvironmentObject var appState: AppState
+
+    var body: some View {
+        VStack(spacing: MomentumSpacing.section) {
+            Spacer()
+
+            VStack(spacing: MomentumSpacing.standard) {
+                Ph.confetti.fill
+                    .frame(width: 80, height: 80)
+                    .foregroundColor(.momentumGold)
+
+                Text("Amazing work!")
+                    .font(MomentumFont.headingLarge())
+                    .foregroundColor(.momentumTextPrimary)
+
+                Text("You've completed all your tasks for today")
+                    .font(MomentumFont.body())
+                    .foregroundColor(.momentumTextSecondary)
+                    .multilineTextAlignment(.center)
+
+                // Streak display
+                HStack(spacing: 8) {
+                    Ph.flame.fill
+                        .frame(width: 20, height: 20)
+                    Text("\(appState.streakCount) day streak")
+                        .font(MomentumFont.bodyMedium())
+                }
+                .foregroundColor(.momentumCoral)
+                .padding(.top, MomentumSpacing.compact)
+            }
+
+            Spacer()
+
+            Button {
+                onDismiss()
+            } label: {
+                Text("Continue")
+                    .font(MomentumFont.bodyMedium())
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, MomentumSpacing.standard)
+                    .background(MomentumGradients.primary)
+                    .cornerRadius(16)
+            }
+            .padding(.horizontal, MomentumSpacing.comfortable)
+            .padding(.bottom, MomentumSpacing.section)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.momentumBackground)
     }
 }
 
@@ -320,7 +614,7 @@ struct CardStackView: View {
             // Reset drag offset without animation
             dragOffset = 0
 
-            // Advance index — back cards animate to new positions
+            // Advance index
             withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
                 if direction > 0 {
                     currentIndex = (currentIndex + 1) % tasks.count
@@ -340,11 +634,11 @@ struct CardStackView: View {
     }
 }
 
-// MARK: - Header View
+// MARK: - Home Header View
 
-struct HeaderView: View {
-    let weeklyPoints: Int
-    let weeklyMax: Int
+struct HomeHeaderView: View {
+    let streakCount: Int
+    let milestoneProgress: Double
 
     private var greeting: String {
         let hour = Calendar.current.component(.hour, from: Date())
@@ -378,11 +672,20 @@ struct HeaderView: View {
 
             Spacer()
 
-            // Weekly progress ring
-            WeeklyProgressRing(
-                currentPoints: weeklyPoints,
-                maxPoints: weeklyMax
-            )
+            // Streak display
+            if streakCount > 0 {
+                HStack(spacing: 4) {
+                    Ph.flame.fill
+                        .frame(width: 18, height: 18)
+                    Text("\(streakCount)")
+                        .font(MomentumFont.bodyMedium())
+                }
+                .foregroundColor(.momentumCoral)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color.momentumCoral.opacity(0.15))
+                .cornerRadius(12)
+            }
         }
     }
 }
