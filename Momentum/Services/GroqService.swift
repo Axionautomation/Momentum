@@ -549,6 +549,11 @@ class GroqService: ObservableObject {
 
         let skillsSummary = userSkills.isEmpty ? "No skills data" : userSkills.map { "\($0.key): \($0.value)" }.joined(separator: ", ")
 
+        // Build known skills list to prevent duplicate questions
+        let knownSkillsList = userSkills.isEmpty
+            ? "No known skills yet"
+            : userSkills.map { "- \($0.key): \($0.value)" }.joined(separator: "\n")
+
         let systemPrompt = """
         Evaluate tasks to determine the best approach for completion.
 
@@ -559,6 +564,8 @@ class GroqService: ObservableObject {
         4. Best approach: userDirect, aiAssisted, toolHandoff, needsGuidance
         5. If skills are unknown, generate a skill question
         6. If user can't do it, suggest an external tool
+
+        IMPORTANT: DO NOT generate skill_questions for skills that are already in the KNOWN USER SKILLS list below. Only ask about skills that have NOT been answered yet.
 
         Return ONLY valid JSON:
         {
@@ -580,12 +587,15 @@ class GroqService: ObservableObject {
 
         let userPrompt = """
         GOAL CONTEXT: \(goalContext)
-        USER SKILLS: \(skillsSummary)
+
+        KNOWN USER SKILLS (DO NOT ask about these):
+        \(knownSkillsList)
 
         TASKS TO EVALUATE:
         \(tasksDescription)
 
         Evaluate each task and return an evaluation for each one in order.
+        Remember: Do NOT generate skill_questions for any skill already listed in KNOWN USER SKILLS above.
         """
 
         let responseText = try await makeRequest(
@@ -658,6 +668,132 @@ class GroqService: ObservableObject {
             skill: response.skill,
             question: response.question,
             options: response.options
+        )
+    }
+
+    // MARK: - Quiz Help Methods
+
+    /// Get AI recommendation for which quiz option to choose
+    func getQuizOptionRecommendation(
+        question: String,
+        options: [String],
+        skill: String,
+        goalContext: String
+    ) async throws -> String {
+        let optionsText = options.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
+
+        let systemPrompt = """
+        You are Momentum's helpful AI coach. The user is being asked a skill assessment question and wants guidance on which option to choose.
+
+        Analyze the question and options, then provide:
+        1. A brief recommendation for which option best fits most users starting out
+        2. A helpful explanation of what each option means
+        3. Encourage honest self-assessment
+
+        Be warm, encouraging, and concise (3-5 sentences). Focus on helping them make the right choice for their situation.
+        """
+
+        let userPrompt = """
+        SKILL BEING ASSESSED: \(skill)
+        GOAL CONTEXT: \(goalContext)
+
+        QUESTION: \(question)
+
+        OPTIONS:
+        \(optionsText)
+
+        Help the user understand the options and guide them toward an honest answer.
+        """
+
+        return try await makeRequest(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            temperature: 0.7,
+            maxTokens: 400
+        )
+    }
+
+    /// Get AI response for follow-up questions in the quiz help bubble
+    func getQuizHelpResponse(
+        question: String,
+        options: [String],
+        skill: String,
+        userMessage: String,
+        previousMessages: [(role: String, content: String)],
+        goalContext: String
+    ) async throws -> String {
+        let optionsText = options.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
+
+        let conversationContext = previousMessages.isEmpty
+            ? "No previous messages."
+            : previousMessages.map { "\($0.role): \($0.content)" }.joined(separator: "\n")
+
+        let systemPrompt = """
+        You are Momentum's helpful AI coach. The user is deciding how to answer a skill assessment question and has a follow-up question.
+
+        Context:
+        - Skill: \(skill)
+        - Question: \(question)
+        - Options:
+        \(optionsText)
+
+        Be helpful, encouraging, and concise. Answer their question directly and help them make an informed choice.
+        """
+
+        let userPrompt = """
+        PREVIOUS CONVERSATION:
+        \(conversationContext)
+
+        USER'S NEW MESSAGE: \(userMessage)
+
+        Respond helpfully to guide their decision.
+        """
+
+        return try await makeRequest(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            temperature: 0.7,
+            maxTokens: 300
+        )
+    }
+
+    /// Get explanation of what a specific option means before confirming
+    func getOptionExplanation(
+        question: String,
+        selectedOption: String,
+        allOptions: [String],
+        skill: String,
+        goalContext: String
+    ) async throws -> String {
+        let otherOptions = allOptions.filter { $0 != selectedOption }
+        let otherOptionsText = otherOptions.joined(separator: ", ")
+
+        let systemPrompt = """
+        You are Momentum's helpful AI coach. The user is about to select an option for a skill assessment question. Explain what this choice means for them.
+
+        Provide:
+        1. What selecting this option indicates about their skill level
+        2. How this will affect their personalized experience (task difficulty, AI assistance level)
+        3. Reassurance that they can always update this later
+
+        Be warm, encouraging, and concise (3-4 sentences). Help them feel confident in their choice.
+        """
+
+        let userPrompt = """
+        SKILL: \(skill)
+        QUESTION: \(question)
+        SELECTED OPTION: "\(selectedOption)"
+        OTHER OPTIONS WERE: \(otherOptionsText)
+        GOAL CONTEXT: \(goalContext)
+
+        Explain what choosing "\(selectedOption)" means for the user's experience.
+        """
+
+        return try await makeRequest(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            temperature: 0.7,
+            maxTokens: 300
         )
     }
 
@@ -1272,6 +1408,187 @@ class GroqService: ObservableObject {
             summary: response.summary,
             details: response.details,
             sources: response.sources
+        )
+    }
+
+    // MARK: - Generate Microsteps (Legacy)
+
+    /// Generate microsteps for a task
+    func generateMicrosteps(
+        taskTitle: String,
+        taskDescription: String?,
+        difficulty: TaskDifficulty
+    ) async throws -> [String] {
+        let timeEstimate: Int
+        switch difficulty {
+        case .easy: timeEstimate = 15
+        case .medium: timeEstimate = 30
+        case .hard: timeEstimate = 60
+        }
+
+        let checklistItems = try await generateChecklistItems(
+            taskTitle: taskTitle,
+            taskDescription: taskDescription,
+            totalMinutes: timeEstimate
+        )
+
+        return checklistItems.map { $0.text }
+    }
+
+    // MARK: - Task Analysis for AI Processing
+
+    /// Analyze a task to determine what AI can do and what questions to ask
+    func analyzeTaskForAI(
+        task: MomentumTask,
+        goalContext: String
+    ) async throws -> AITaskAnalysis {
+        let systemPrompt = """
+        Analyze this task to determine:
+        1. What questions need to be asked to proceed
+        2. What research is needed
+        3. Whether AI can proceed without more information
+
+        Return ONLY valid JSON:
+        {
+          "questions_needed": [
+            {
+              "question": "The question text",
+              "options": [{"label": "Option 1"}, {"label": "Option 2"}],
+              "allows_custom_input": true,
+              "priority": "important"
+            }
+          ],
+          "research_needed": ["Research topic 1", "Research topic 2"],
+          "can_proceed": true
+        }
+        """
+
+        let userPrompt = """
+        Task: \(task.title)
+        Description: \(task.taskDescription ?? "No description")
+        Goal Context: \(goalContext)
+
+        Analyze what's needed to complete this task.
+        """
+
+        let responseText = try await makeRequest(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            temperature: 0.7,
+            maxTokens: 1000,
+            requireJSON: true
+        )
+
+        struct AnalysisResponse: Codable {
+            let questions_needed: [QuestionData]?
+            let research_needed: [String]?
+            let can_proceed: Bool
+
+            struct QuestionData: Codable {
+                let question: String
+                let options: [OptionData]?
+                let allows_custom_input: Bool?
+                let priority: String?
+
+                struct OptionData: Codable {
+                    let label: String
+                }
+            }
+        }
+
+        guard let data = responseText.data(using: .utf8) else {
+            throw GroqError.decodingError("Could not convert response to data")
+        }
+
+        let response = try JSONDecoder().decode(AnalysisResponse.self, from: data)
+
+        let questions = (response.questions_needed ?? []).map { q in
+            AIQuestion(
+                taskId: task.id,
+                goalId: task.goalId,
+                question: q.question,
+                options: (q.options ?? []).map { QuestionOption(label: $0.label) },
+                allowsCustomInput: q.allows_custom_input ?? false,
+                priority: QuestionPriority(rawValue: q.priority ?? "important") ?? .important
+            )
+        }
+
+        return AITaskAnalysis(
+            questionsNeeded: questions,
+            researchNeeded: response.research_needed ?? [],
+            canProceed: response.can_proceed
+        )
+    }
+
+    /// Generate enhanced details for a task
+    func generateTaskDetails(
+        task: MomentumTask,
+        context: String
+    ) async throws -> EnhancedTaskDetails {
+        let systemPrompt = """
+        Generate enhanced details for a task including:
+        1. Why this difficulty level is appropriate
+        2. Time breakdown for each step
+        3. Helpful tips
+
+        Return ONLY valid JSON:
+        {
+          "difficulty_explanation": "Why this task has this difficulty",
+          "time_breakdown": [
+            {"microstep": "Step name", "estimated_minutes": 10, "rationale": "Why this time"}
+          ],
+          "tips": ["Tip 1", "Tip 2", "Tip 3"]
+        }
+        """
+
+        let checklistText = task.checklist.map { $0.text }.joined(separator: ", ")
+
+        let userPrompt = """
+        Task: \(task.title)
+        Description: \(task.taskDescription ?? "No description")
+        Checklist: \(checklistText)
+        Total Time: \(task.totalEstimatedMinutes) minutes
+        Context: \(context)
+
+        Generate enhanced details for this task.
+        """
+
+        let responseText = try await makeRequest(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            temperature: 0.7,
+            maxTokens: 800,
+            requireJSON: true
+        )
+
+        struct DetailsResponse: Codable {
+            let difficulty_explanation: String
+            let time_breakdown: [TimeBreakdownItem]
+            let tips: [String]
+
+            struct TimeBreakdownItem: Codable {
+                let microstep: String
+                let estimated_minutes: Int
+                let rationale: String
+            }
+        }
+
+        guard let data = responseText.data(using: .utf8) else {
+            throw GroqError.decodingError("Could not convert response to data")
+        }
+
+        let response = try JSONDecoder().decode(DetailsResponse.self, from: data)
+
+        return EnhancedTaskDetails(
+            difficultyExplanation: response.difficulty_explanation,
+            timeBreakdown: response.time_breakdown.map {
+                MicrostepTimeEstimate(
+                    microstep: $0.microstep,
+                    estimatedMinutes: $0.estimated_minutes,
+                    rationale: $0.rationale
+                )
+            },
+            tips: response.tips
         )
     }
 }

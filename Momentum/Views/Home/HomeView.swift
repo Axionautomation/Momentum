@@ -7,6 +7,7 @@
 
 import SwiftUI
 import PhosphorSwift
+import UIKit
 
 struct HomeView: View {
     @EnvironmentObject var appState: AppState
@@ -54,94 +55,95 @@ struct HomeView: View {
                 )
                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
             } else {
-                VStack(spacing: MomentumSpacing.section) {
-                    // Header
-                    HomeHeaderView(
-                        streakCount: appState.streakCount,
-                        milestoneProgress: appState.currentMilestoneProgress
-                    )
-                    .padding(.horizontal, MomentumSpacing.comfortable)
-                    .padding(.top, MomentumSpacing.standard)
+                ScrollView {
+                    VStack(spacing: MomentumSpacing.section) {
+                        // Header
+                        HomeHeaderView(
+                            streakCount: appState.streakCount,
+                            milestoneProgress: appState.currentMilestoneProgress
+                        )
+                        .padding(.horizontal, MomentumSpacing.comfortable)
+                        .padding(.top, MomentumSpacing.standard)
 
-                    // AI Feed Section (if there are items)
-                    if !appState.aiFeedItems.isEmpty {
-                        AIFeedSection(items: appState.aiFeedItems)
-                            .padding(.horizontal, MomentumSpacing.comfortable)
-                    }
-
-                    // Loading indicator during AI evaluation
-                    if appState.isEvaluatingTasks {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .momentumViolet))
-                            Text("AI is preparing your day...")
-                                .font(MomentumFont.label())
-                                .foregroundColor(.momentumTextSecondary)
+                        // AI Feed Section (if there are items)
+                        if !appState.aiFeedItems.isEmpty {
+                            AIFeedSection(items: appState.aiFeedItems)
+                                .padding(.horizontal, MomentumSpacing.comfortable)
                         }
-                        .padding(.vertical, MomentumSpacing.compact)
-                    }
 
-                    Spacer()
-
-                    // Task cards carousel
-                    if pendingTasks.isEmpty && appState.todaysTasks.isEmpty {
-                        EmptyTasksView()
-                    } else if pendingTasks.isEmpty {
-                        // All tasks completed
-                        VStack(spacing: MomentumSpacing.section) {
-                            VStack(spacing: MomentumSpacing.standard) {
-                                Ph.checkCircle.fill
-                                    .frame(width: 56, height: 56)
-                                    .foregroundColor(.momentumSuccess)
-
-                                Text("All done for today!")
-                                    .font(MomentumFont.headingMedium())
-                                    .foregroundColor(.momentumTextPrimary)
-
-                                Text("You've completed all your tasks")
-                                    .font(MomentumFont.body())
+                        // Loading indicator during AI evaluation
+                        if appState.isEvaluatingTasks {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .momentumViolet))
+                                Text("AI is preparing your day...")
+                                    .font(MomentumFont.label())
                                     .foregroundColor(.momentumTextSecondary)
                             }
-
-                            // Work ahead button
-                            if appState.hasMorePendingTasks {
-                                Button {
-                                    completedTaskIds.removeAll()
-                                    // Load next batch of tasks
-                                    Task {
-                                        await appState.generateWeeklyTasks()
-                                    }
-                                } label: {
-                                    HStack(spacing: 8) {
-                                        Ph.arrowRight.bold
-                                            .frame(width: 18, height: 18)
-                                        Text("See Tomorrow's Tasks")
-                                            .font(MomentumFont.bodyMedium())
-                                    }
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, MomentumSpacing.section)
-                                    .padding(.vertical, MomentumSpacing.standard)
-                                    .background(MomentumGradients.primary)
-                                    .cornerRadius(16)
-                                }
-                                .padding(.top, MomentumSpacing.compact)
-                            }
+                            .padding(.vertical, MomentumSpacing.compact)
                         }
-                    } else {
-                        CardStackView(
-                            tasks: allTodayTasks,
-                            goalNameForTask: { goalName(for: $0) },
-                            isTaskCompleted: { isTaskCompleted($0) },
-                            onComplete: { completeTask($0) },
-                            onExpand: { task in expandedTask = task }
-                        )
-                        .frame(height: ((UIApplication.shared.connectedScenes.first as? UIWindowScene)?.screen.bounds.height ?? 800) * 0.50)
+
+                        // Task cards carousel
+                        if pendingTasks.isEmpty && appState.todaysTasks.isEmpty {
+                            EmptyTasksView()
+                                .padding(.top, MomentumSpacing.large)
+                        } else if pendingTasks.isEmpty {
+                            // All tasks completed
+                            VStack(spacing: MomentumSpacing.section) {
+                                VStack(spacing: MomentumSpacing.standard) {
+                                    Ph.checkCircle.fill
+                                        .frame(width: 56, height: 56)
+                                        .foregroundColor(.momentumSuccess)
+
+                                    Text("All done for today!")
+                                        .font(MomentumFont.headingMedium())
+                                        .foregroundColor(.momentumTextPrimary)
+
+                                    Text("You've completed all your tasks")
+                                        .font(MomentumFont.body())
+                                        .foregroundColor(.momentumTextSecondary)
+                                }
+
+                                // Work ahead button
+                                if appState.hasMorePendingTasks {
+                                    Button {
+                                        completedTaskIds.removeAll()
+                                        // Load next batch of tasks
+                                        Task {
+                                            await appState.generateWeeklyTasks()
+                                        }
+                                    } label: {
+                                        HStack(spacing: 8) {
+                                            Ph.arrowRight.bold
+                                                .frame(width: 18, height: 18)
+                                            Text("See Tomorrow's Tasks")
+                                                .font(MomentumFont.bodyMedium())
+                                        }
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, MomentumSpacing.section)
+                                        .padding(.vertical, MomentumSpacing.standard)
+                                        .background(MomentumGradients.primary)
+                                        .cornerRadius(16)
+                                    }
+                                    .padding(.top, MomentumSpacing.compact)
+                                }
+                            }
+                            .padding(.top, MomentumSpacing.large)
+                        } else {
+                            CardStackView(
+                                tasks: allTodayTasks,
+                                goalNameForTask: { goalName(for: $0) },
+                                isTaskCompleted: { isTaskCompleted($0) },
+                                onComplete: { completeTask($0) },
+                                onExpand: { task in expandedTask = task }
+                            )
+                            .frame(height: screenHeight * 0.50)
+                        }
+
+                        // Bottom spacing for tab bar
+                        Spacer()
+                            .frame(height: 100)
                     }
-
-                    Spacer()
-
-                    // Bottom spacing for tab bar
-                    Spacer(minLength: 60)
                 }
             }
         }
@@ -169,6 +171,10 @@ struct HomeView: View {
     }
 
     // MARK: - Helpers
+
+    private var screenHeight: CGFloat {
+        (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.screen.bounds.height ?? 850
+    }
 
     private func goalName(for task: MomentumTask) -> String {
         if let goal = appState.activeGoal, goal.id == task.goalId {
@@ -264,7 +270,7 @@ struct AIFeedCard: View {
                     .foregroundColor(.momentumTextTertiary)
             }
             .padding(MomentumSpacing.compact)
-            .background(Color.momentumSurfacePrimary)
+            .background(Color.momentumBackgroundSecondary)
             .cornerRadius(12)
         }
         .sheet(isPresented: $showSheet) {
@@ -280,29 +286,91 @@ struct AIFeedItemSheet: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var appState: AppState
 
+    // Quiz enhancement states
+    @State private var showQuizHelpBubble = false
+    @State private var selectedOptionForExplanation: String?
+    @State private var showOptionExplanation = false
+    @State private var currentSkillQuestion: SkillQuestion?
+
     var body: some View {
         NavigationView {
-            ScrollView {
-                VStack(alignment: .leading, spacing: MomentumSpacing.section) {
-                    switch item {
-                    case .skillQuestion(let question):
-                        skillQuestionView(question)
-                    case .toolPrompt(let prompt):
-                        toolPromptView(prompt)
-                    case .questionnaire(let questionnaire):
-                        questionnaireView(questionnaire)
-                    case .report(let report):
-                        reportView(report)
+            ZStack {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: MomentumSpacing.section) {
+                        switch item {
+                        case .skillQuestion(let question):
+                            skillQuestionView(question)
+                        case .toolPrompt(let prompt):
+                            toolPromptView(prompt)
+                        case .questionnaire(let questionnaire):
+                            questionnaireView(questionnaire)
+                        case .report(let report):
+                            reportView(report)
+                        }
+                    }
+                    .padding(MomentumSpacing.comfortable)
+                }
+                .background(Color.momentumBackground)
+
+                // Quiz help bubble overlay
+                if showQuizHelpBubble, let question = currentSkillQuestion {
+                    Color.black.opacity(0.3)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                showQuizHelpBubble = false
+                            }
+                        }
+
+                    VStack {
+                        Spacer()
+                        QuizHelpBubble(
+                            question: question,
+                            goalContext: appState.activeGoal?.visionRefined ?? appState.activeGoal?.visionText ?? "",
+                            onSelectOption: { option in
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                    showQuizHelpBubble = false
+                                }
+                                selectedOptionForExplanation = option
+                                showOptionExplanation = true
+                            },
+                            onDismiss: {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                    showQuizHelpBubble = false
+                                }
+                            }
+                        )
+                        .padding(.horizontal, MomentumSpacing.standard)
+                        .padding(.bottom, MomentumSpacing.section)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
                 }
-                .padding(MomentumSpacing.comfortable)
             }
-            .background(Color.momentumBackground)
             .navigationTitle(item.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") { dismiss() }
+                }
+            }
+            .sheet(isPresented: $showOptionExplanation) {
+                if let option = selectedOptionForExplanation, let question = currentSkillQuestion {
+                    OptionExplanationSheet(
+                        question: question,
+                        selectedOption: option,
+                        goalContext: appState.activeGoal?.visionRefined ?? appState.activeGoal?.visionText ?? "",
+                        onConfirm: {
+                            SoundManager.shared.successHaptic()
+                            appState.submitSkillAnswer(question, answer: option)
+                            showOptionExplanation = false
+                            dismiss()
+                        },
+                        onChooseDifferent: {
+                            showOptionExplanation = false
+                            selectedOptionForExplanation = nil
+                        }
+                    )
+                    .presentationDetents([.medium])
                 }
             }
         }
@@ -314,10 +382,31 @@ struct AIFeedItemSheet: View {
                 .font(MomentumFont.headingMedium())
                 .foregroundColor(.momentumTextPrimary)
 
+            // Help me choose button
+            Button {
+                currentSkillQuestion = question
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    showQuizHelpBubble = true
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Ph.sparkle.regular
+                        .frame(width: 16, height: 16)
+                    Text("Help me choose")
+                        .font(MomentumFont.label())
+                }
+                .foregroundColor(.momentumViolet)
+                .padding(.horizontal, MomentumSpacing.compact)
+                .padding(.vertical, MomentumSpacing.tight)
+                .background(Color.momentumViolet.opacity(0.1))
+                .cornerRadius(MomentumRadius.small)
+            }
+
             ForEach(question.options, id: \.self) { option in
                 Button {
-                    appState.submitSkillAnswer(question, answer: option)
-                    dismiss()
+                    currentSkillQuestion = question
+                    selectedOptionForExplanation = option
+                    showOptionExplanation = true
                 } label: {
                     HStack {
                         Text(option)
@@ -328,10 +417,17 @@ struct AIFeedItemSheet: View {
                     }
                     .foregroundColor(.momentumTextPrimary)
                     .padding(MomentumSpacing.standard)
-                    .background(Color.momentumSurfaceSecondary)
+                    .background(Color.momentumCardBackground)
                     .cornerRadius(12)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.momentumCardBorder, lineWidth: 1)
+                    )
                 }
             }
+        }
+        .onAppear {
+            currentSkillQuestion = question
         }
     }
 
@@ -370,7 +466,7 @@ struct AIFeedItemSheet: View {
                 .font(MomentumFont.body())
                 .foregroundColor(.momentumTextPrimary)
                 .padding(MomentumSpacing.standard)
-                .background(Color.momentumSurfaceSecondary)
+                .background(Color.momentumBackgroundSecondary)
                 .cornerRadius(12)
         }
     }
@@ -386,6 +482,7 @@ struct AIFeedItemSheet: View {
                     if let options = question.options {
                         ForEach(options, id: \.self) { option in
                             Button {
+                                SoundManager.shared.successHaptic()
                                 appState.submitQuestionnaireAnswer(questionnaire, questionId: question.id, answer: option)
                             } label: {
                                 HStack {
@@ -400,17 +497,29 @@ struct AIFeedItemSheet: View {
                                 }
                                 .foregroundColor(.momentumTextPrimary)
                                 .padding(MomentumSpacing.compact)
-                                .background(question.answer == option ? Color.momentumSuccess.opacity(0.1) : Color.momentumSurfaceSecondary)
+                                .background(question.answer == option ? Color.momentumSuccess.opacity(0.1) : Color.momentumCardBackground)
                                 .cornerRadius(8)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(question.answer == option ? Color.momentumSuccess : Color.momentumCardBorder, lineWidth: 1)
+                                )
                             }
                         }
                     } else {
                         TextField("Your answer...", text: .constant(question.answer ?? ""))
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .font(MomentumFont.body())
+                            .foregroundColor(.momentumTextPrimary)
+                            .padding(MomentumSpacing.compact)
+                            .background(Color.momentumCardBackground)
+                            .cornerRadius(8)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Color.momentumCardBorder, lineWidth: 1)
+                            )
                     }
                 }
                 .padding(MomentumSpacing.compact)
-                .background(Color.momentumSurfacePrimary)
+                .background(Color.momentumBackgroundSecondary)
                 .cornerRadius(12)
             }
         }
@@ -442,6 +551,137 @@ struct AIFeedItemSheet: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Option Explanation Sheet
+
+struct OptionExplanationSheet: View {
+    let question: SkillQuestion
+    let selectedOption: String
+    let goalContext: String
+    let onConfirm: () -> Void
+    let onChooseDifferent: () -> Void
+
+    @State private var explanation: String?
+    @State private var isLoading = true
+    @State private var errorMessage: String?
+
+    private let groqService = GroqService.shared
+
+    var body: some View {
+        VStack(spacing: MomentumSpacing.section) {
+            // Header
+            VStack(spacing: MomentumSpacing.compact) {
+                Text("You selected")
+                    .font(MomentumFont.body())
+                    .foregroundColor(.momentumTextSecondary)
+
+                Text(selectedOption)
+                    .font(MomentumFont.headingMedium())
+                    .foregroundColor(.momentumTextPrimary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, MomentumSpacing.standard)
+                    .padding(.vertical, MomentumSpacing.compact)
+                    .background(Color.momentumBlue.opacity(0.1))
+                    .cornerRadius(MomentumRadius.small)
+            }
+            .padding(.top, MomentumSpacing.standard)
+
+            // Explanation content
+            VStack(alignment: .leading, spacing: MomentumSpacing.compact) {
+                HStack(spacing: 6) {
+                    Ph.sparkle.fill
+                        .frame(width: 16, height: 16)
+                        .foregroundColor(.momentumViolet)
+                    Text("What this means")
+                        .font(MomentumFont.bodyMedium())
+                        .foregroundColor(.momentumTextPrimary)
+                }
+
+                if isLoading {
+                    HStack(spacing: MomentumSpacing.tight) {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .momentumViolet))
+                        Text("Understanding your choice...")
+                            .font(MomentumFont.body())
+                            .foregroundColor(.momentumTextSecondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(MomentumSpacing.standard)
+                } else if let explanation = explanation {
+                    Text(explanation)
+                        .font(MomentumFont.body())
+                        .foregroundColor(.momentumTextSecondary)
+                        .padding(MomentumSpacing.standard)
+                } else if let error = errorMessage {
+                    Text(error)
+                        .font(MomentumFont.body())
+                        .foregroundColor(.momentumWarning)
+                        .padding(MomentumSpacing.standard)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.momentumBackgroundSecondary)
+            .cornerRadius(MomentumRadius.medium)
+            .padding(.horizontal, MomentumSpacing.comfortable)
+
+            Spacer()
+
+            // Action buttons
+            VStack(spacing: MomentumSpacing.compact) {
+                Button {
+                    onConfirm()
+                } label: {
+                    Text("Confirm this answer")
+                        .font(MomentumFont.bodyMedium())
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, MomentumSpacing.standard)
+                        .background(MomentumGradients.primary)
+                        .cornerRadius(MomentumRadius.medium)
+                }
+
+                Button {
+                    onChooseDifferent()
+                } label: {
+                    Text("Choose different option")
+                        .font(MomentumFont.bodyMedium())
+                        .foregroundColor(.momentumBlue)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, MomentumSpacing.standard)
+                        .background(Color.momentumBlue.opacity(0.1))
+                        .cornerRadius(MomentumRadius.medium)
+                }
+            }
+            .padding(.horizontal, MomentumSpacing.comfortable)
+            .padding(.bottom, MomentumSpacing.section)
+        }
+        .background(Color.momentumBackground)
+        .task {
+            await fetchExplanation()
+        }
+    }
+
+    private func fetchExplanation() async {
+        isLoading = true
+        errorMessage = nil
+
+        do {
+            let result = try await groqService.getOptionExplanation(
+                question: question.question,
+                selectedOption: selectedOption,
+                allOptions: question.options,
+                skill: question.skill,
+                goalContext: goalContext
+            )
+            explanation = result
+        } catch {
+            errorMessage = "Couldn't load explanation, but you can still confirm your choice."
+            print("Option explanation error: \(error)")
+        }
+
+        isLoading = false
     }
 }
 
