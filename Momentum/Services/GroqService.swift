@@ -547,8 +547,6 @@ class GroqService: ObservableObject {
             """
         }.joined(separator: "\n\n")
 
-        let skillsSummary = userSkills.isEmpty ? "No skills data" : userSkills.map { "\($0.key): \($0.value)" }.joined(separator: ", ")
-
         // Build known skills list to prevent duplicate questions
         let knownSkillsList = userSkills.isEmpty
             ? "No known skills yet"

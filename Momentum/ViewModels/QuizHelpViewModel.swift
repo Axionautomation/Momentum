@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Combine
 
 /// Chat message for the quiz help bubble
 struct QuizHelpMessage: Identifiable, Equatable {
