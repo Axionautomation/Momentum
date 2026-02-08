@@ -12,6 +12,8 @@ import UIKit
 struct HomeView: View {
     @EnvironmentObject var appState: AppState
     @State private var appeared = false
+    @State private var briefingAppeared = false
+    @State private var feedAppeared = false
     @State private var completedTaskIds: Set<UUID> = []
     @State private var showCelebration = false
     @State private var expandedTask: MomentumTask? = nil
@@ -57,7 +59,7 @@ struct HomeView: View {
             } else {
                 ScrollView {
                     VStack(spacing: MomentumSpacing.section) {
-                        // Briefing Hero or fallback header
+                        // Briefing Hero or fallback header (fade + slide up entrance)
                         if let briefing = appState.currentBriefing {
                             BriefingHeroCard(
                                 briefing: briefing,
@@ -68,10 +70,13 @@ struct HomeView: View {
                             )
                             .padding(.horizontal, MomentumSpacing.comfortable)
                             .padding(.top, MomentumSpacing.standard)
+                            .offset(y: briefingAppeared ? 0 : 16)
+                            .opacity(briefingAppeared ? 1 : 0)
                         } else if appState.briefingEngine.isGenerating {
                             BriefingShimmerCard()
                                 .padding(.horizontal, MomentumSpacing.comfortable)
                                 .padding(.top, MomentumSpacing.standard)
+                                .opacity(briefingAppeared ? 1 : 0)
                         } else {
                             HomeHeaderView(
                                 streakCount: appState.streakCount,
@@ -79,6 +84,8 @@ struct HomeView: View {
                             )
                             .padding(.horizontal, MomentumSpacing.comfortable)
                             .padding(.top, MomentumSpacing.standard)
+                            .offset(y: briefingAppeared ? 0 : 12)
+                            .opacity(briefingAppeared ? 1 : 0)
                         }
 
                         // Quick Actions
@@ -89,11 +96,15 @@ struct HomeView: View {
                             }
                         )
                         .padding(.horizontal, MomentumSpacing.comfortable)
+                        .offset(y: briefingAppeared ? 0 : 10)
+                        .opacity(briefingAppeared ? 1 : 0)
 
-                        // AI Feed Section (if there are items)
+                        // AI Feed Section (staggered fade in)
                         if !appState.aiFeedItems.isEmpty {
                             AIFeedSection(items: appState.aiFeedItems)
                                 .padding(.horizontal, MomentumSpacing.comfortable)
+                                .offset(y: feedAppeared ? 0 : 12)
+                                .opacity(feedAppeared ? 1 : 0)
                         }
 
                         // Loading indicator during AI evaluation
@@ -174,6 +185,15 @@ struct HomeView: View {
         }
         .onAppear {
             appeared = true
+
+            // Staggered entrance animations
+            withAnimation(MomentumAnimation.smoothSpring.delay(0.1)) {
+                briefingAppeared = true
+            }
+            withAnimation(MomentumAnimation.smoothSpring.delay(0.25)) {
+                feedAppeared = true
+            }
+
             // Trigger task evaluation on appear
             Task {
                 await appState.evaluateTodaysTasks()
@@ -255,8 +275,10 @@ struct AIFeedSection: View {
             }
             .foregroundColor(.momentumViolet)
 
-            ForEach(items.prefix(3)) { item in
+            ForEach(Array(items.prefix(3).enumerated()), id: \.element.id) { index, item in
                 AIFeedCard(item: item)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .animation(MomentumAnimation.staggered(index: index, baseDelay: 0.08), value: items.count)
             }
         }
     }
@@ -395,7 +417,8 @@ struct AIFeedItemSheet: View {
                             selectedOptionForExplanation = nil
                         }
                     )
-                    .presentationDetents([.medium])
+                    .presentationDetents([.height(480)])
+                    .presentationBackground(Color.momentumBackground)
                 }
             }
         }

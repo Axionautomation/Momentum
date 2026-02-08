@@ -16,22 +16,70 @@ struct UserPreferences: Codable {
     var availableDays: [Int]                // Days of week available (1=Sun, 2=Mon, etc.)
     var userSkills: [String: String]        // Skill -> answer cache (e.g., "coding" -> "intermediate")
 
+    // Notification preferences
+    var morningBriefingEnabled: Bool
+    var briefingTime: Date                  // Time of day for briefing
+    var taskRemindersEnabled: Bool
+    var streakAlertsEnabled: Bool
+    var achievementAlertsEnabled: Bool
+
+    // AI preferences
+    var aiProactivityLevel: Double          // 0.0 (minimal) to 1.0 (proactive)
+    var modelPreference: ModelPreference
+
     init(
         weeklyTimeMinutes: Int = 300,
         preferredSessionMinutes: Int = 30,
         availableDays: [Int] = [2, 3, 4, 5, 6], // Mon-Fri default
-        userSkills: [String: String] = [:]
+        userSkills: [String: String] = [:],
+        morningBriefingEnabled: Bool = true,
+        briefingTime: Date = Calendar.current.date(from: DateComponents(hour: 7, minute: 0)) ?? Date(),
+        taskRemindersEnabled: Bool = true,
+        streakAlertsEnabled: Bool = true,
+        achievementAlertsEnabled: Bool = true,
+        aiProactivityLevel: Double = 0.7,
+        modelPreference: ModelPreference = .auto
     ) {
         self.weeklyTimeMinutes = weeklyTimeMinutes
         self.preferredSessionMinutes = preferredSessionMinutes
         self.availableDays = availableDays
         self.userSkills = userSkills
+        self.morningBriefingEnabled = morningBriefingEnabled
+        self.briefingTime = briefingTime
+        self.taskRemindersEnabled = taskRemindersEnabled
+        self.streakAlertsEnabled = streakAlertsEnabled
+        self.achievementAlertsEnabled = achievementAlertsEnabled
+        self.aiProactivityLevel = aiProactivityLevel
+        self.modelPreference = modelPreference
+    }
+}
+
+enum ModelPreference: String, Codable, CaseIterable {
+    case auto
+    case fast
+    case balanced
+
+    var displayName: String {
+        switch self {
+        case .auto: return "Auto"
+        case .fast: return "Fast (Groq)"
+        case .balanced: return "Balanced"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .auto: return "Let Momentum choose the best model"
+        case .fast: return "Fastest responses, great for most tasks"
+        case .balanced: return "Better reasoning for complex tasks"
+        }
     }
 }
 
 // MARK: - User Model
 struct MomentumUser: Identifiable, Codable {
     let id: UUID
+    var name: String
     var email: String
     var createdAt: Date
     var subscriptionTier: SubscriptionTier
@@ -42,8 +90,19 @@ struct MomentumUser: Identifiable, Codable {
     var lastTaskCompletedAt: Date?
     var preferences: UserPreferences?
 
+    var initials: String {
+        let parts = name.split(separator: " ")
+        if parts.count >= 2 {
+            return String(parts[0].prefix(1) + parts[1].prefix(1)).uppercased()
+        } else if let first = parts.first, !first.isEmpty {
+            return String(first.prefix(2)).uppercased()
+        }
+        return String(email.prefix(2)).uppercased()
+    }
+
     init(
         id: UUID = UUID(),
+        name: String = "Momentum User",
         email: String,
         createdAt: Date = Date(),
         subscriptionTier: SubscriptionTier = .free,
@@ -55,6 +114,7 @@ struct MomentumUser: Identifiable, Codable {
         preferences: UserPreferences? = nil
     ) {
         self.id = id
+        self.name = name
         self.email = email
         self.createdAt = createdAt
         self.subscriptionTier = subscriptionTier
@@ -641,6 +701,13 @@ enum BadgeType: String, Codable, CaseIterable {
     case thirtyDayStreak = "30_day_streak"
     case weekPerfect = "week_perfect"
     case firstGoalComplete = "first_goal_complete"
+    case hundredTasks = "hundred_tasks"
+    case fiveHundredTasks = "five_hundred_tasks"
+    case domainMaster = "domain_master"
+    case speedDemon = "speed_demon"
+    case earlyBird = "early_bird"
+    case nightOwl = "night_owl"
+    case researchPro = "research_pro"
 
     var title: String {
         switch self {
@@ -650,6 +717,13 @@ enum BadgeType: String, Codable, CaseIterable {
         case .thirtyDayStreak: return "30 Day Streak"
         case .weekPerfect: return "Perfect Week"
         case .firstGoalComplete: return "Goal Crusher"
+        case .hundredTasks: return "Centurion"
+        case .fiveHundredTasks: return "Task Machine"
+        case .domainMaster: return "Domain Master"
+        case .speedDemon: return "Speed Demon"
+        case .earlyBird: return "Early Bird"
+        case .nightOwl: return "Night Owl"
+        case .researchPro: return "Research Pro"
         }
     }
 
@@ -661,6 +735,44 @@ enum BadgeType: String, Codable, CaseIterable {
         case .thirtyDayStreak: return "Complete tasks 30 days in a row"
         case .weekPerfect: return "Complete all daily tasks for a week"
         case .firstGoalComplete: return "Complete your first Milestone"
+        case .hundredTasks: return "Complete 100 tasks total"
+        case .fiveHundredTasks: return "Complete 500 tasks total"
+        case .domainMaster: return "Complete a goal in any domain"
+        case .speedDemon: return "Complete 5 tasks in a single day"
+        case .earlyBird: return "Complete a task before 8 AM"
+        case .nightOwl: return "Complete a task after 10 PM"
+        case .researchPro: return "Use AI research 10 times"
+        }
+    }
+
+    var iconName: String {
+        switch self {
+        case .sevenDayStreak: return "flame.fill"
+        case .first100Tasks: return "star.fill"
+        case .fastStart: return "bolt.fill"
+        case .thirtyDayStreak: return "flame.fill"
+        case .weekPerfect: return "crown.fill"
+        case .firstGoalComplete: return "trophy.fill"
+        case .hundredTasks: return "star.circle.fill"
+        case .fiveHundredTasks: return "star.square.fill"
+        case .domainMaster: return "rosette"
+        case .speedDemon: return "hare.fill"
+        case .earlyBird: return "sunrise.fill"
+        case .nightOwl: return "moon.stars.fill"
+        case .researchPro: return "magnifyingglass"
+        }
+    }
+
+    var accentColor: Color {
+        switch self {
+        case .sevenDayStreak, .thirtyDayStreak: return .momentumWarning
+        case .first100Tasks, .hundredTasks, .fiveHundredTasks: return .momentumGold
+        case .fastStart, .speedDemon: return .momentumCoral
+        case .weekPerfect: return .momentumViolet
+        case .firstGoalComplete, .domainMaster: return .momentumSuccess
+        case .earlyBird: return .momentumBlueLight
+        case .nightOwl: return .momentumViolet
+        case .researchPro: return .momentumBlue
         }
     }
 }
@@ -953,6 +1065,121 @@ struct AIWorkResult: Codable {
         self.sources = sources
         self.toolName = toolName
         self.prompt = prompt
+    }
+}
+
+// MARK: - Draft Content (AI-generated drafts for user review)
+
+enum DraftType: String, Codable, CaseIterable {
+    case email
+    case linkedInPost
+    case businessPlan
+    case coverLetter
+    case pitchOutline
+    case custom
+
+    var displayName: String {
+        switch self {
+        case .email: return "Email"
+        case .linkedInPost: return "LinkedIn Post"
+        case .businessPlan: return "Business Plan"
+        case .coverLetter: return "Cover Letter"
+        case .pitchOutline: return "Pitch Outline"
+        case .custom: return "Custom"
+        }
+    }
+}
+
+enum DraftStatus: String, Codable {
+    case draft
+    case reviewed
+    case approved
+}
+
+struct DraftContent: Identifiable, Codable {
+    let id: UUID
+    let goalId: UUID
+    let taskId: UUID?
+    let type: DraftType
+    let title: String
+    var content: String
+    var status: DraftStatus
+    let createdAt: Date
+    var updatedAt: Date
+
+    init(
+        id: UUID = UUID(),
+        goalId: UUID,
+        taskId: UUID? = nil,
+        type: DraftType,
+        title: String,
+        content: String,
+        status: DraftStatus = .draft,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.goalId = goalId
+        self.taskId = taskId
+        self.type = type
+        self.title = title
+        self.content = content
+        self.status = status
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}
+
+// MARK: - AI Memory Entry (Persistent AI memory system)
+
+enum MemoryCategory: String, Codable, CaseIterable {
+    case skill
+    case preference
+    case decision
+    case research
+    case pattern
+    case personal
+
+    var displayName: String {
+        switch self {
+        case .skill: return "Skill"
+        case .preference: return "Preference"
+        case .decision: return "Decision"
+        case .research: return "Research"
+        case .pattern: return "Pattern"
+        case .personal: return "Personal"
+        }
+    }
+}
+
+struct AIMemoryEntry: Identifiable, Codable {
+    let id: UUID
+    let category: MemoryCategory
+    let key: String
+    let value: String
+    var confidence: Double
+    let createdAt: Date
+    var updatedAt: Date
+    var source: String
+
+    init(
+        id: UUID = UUID(),
+        category: MemoryCategory,
+        key: String,
+        value: String,
+        confidence: Double = 0.8,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date(),
+        source: String = "chat"
+    ) {
+        self.id = id
+        self.category = category
+        self.key = key
+        self.value = value
+        self.confidence = confidence
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.source = source
     }
 }
 

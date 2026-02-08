@@ -93,10 +93,38 @@ class SoundManager {
         generator.notificationOccurred(.success)
     }
 
+    /// Warning haptic for destructive or important actions
+    func warningHaptic() {
+        let generator = UINotificationFeedbackGenerator()
+        generator.prepare()
+        generator.notificationOccurred(.warning)
+    }
+
+    /// Error haptic for failures
+    func errorHaptic() {
+        let generator = UINotificationFeedbackGenerator()
+        generator.prepare()
+        generator.notificationOccurred(.error)
+    }
+
     /// Selection haptic for toggles
     func selectionHaptic() {
         let generator = UISelectionFeedbackGenerator()
         generator.prepare()
         generator.selectionChanged()
+    }
+
+    /// Soft haptic — lighter than light, for subtle UI feedback
+    func softHaptic() {
+        let generator = UIImpactFeedbackGenerator(style: .soft)
+        generator.prepare()
+        generator.impactOccurred()
+    }
+
+    /// Rigid haptic — crisp, mechanical feedback
+    func rigidHaptic() {
+        let generator = UIImpactFeedbackGenerator(style: .rigid)
+        generator.prepare()
+        generator.impactOccurred()
     }
 }

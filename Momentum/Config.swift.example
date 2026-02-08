@@ -14,6 +14,10 @@ struct Config {
     static let groqModel = "llama-3.3-70b-versatile" // Fast model for general AI tasks (intent, clarifications, help)
     // NOTE: Browser search uses openai/gpt-oss-120b (only model with browser_search tool)
 
+    // MARK: - Claude API Configuration (Phase 3: Multi-Model AI)
+    static let claudeAPIKey = "YOUR_CLAUDE_API_KEY_HERE"  // Get your key at https://console.anthropic.com
+    static let claudeModel = "claude-sonnet-4-5-20250929"
+
     // MARK: - App Configuration
     static let appVersion = "1.0.0"
     static let minimumIOSVersion = "16.0"

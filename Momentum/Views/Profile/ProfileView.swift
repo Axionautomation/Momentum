@@ -14,66 +14,106 @@ struct ProfileView: View {
     @State private var showResetConfirmation = false
 
     var body: some View {
-        ZStack {
-            Color.momentumBackground
-                .ignoresSafeArea()
+        NavigationStack {
+            ZStack {
+                Color.momentumBackground
+                    .ignoresSafeArea()
 
-            ScrollView {
-                VStack(spacing: MomentumSpacing.section) {
-                    // Header
-                    VStack(alignment: .leading, spacing: MomentumSpacing.tight) {
-                        Text("Profile")
-                            .font(MomentumFont.headingLarge())
-                            .foregroundColor(.momentumTextPrimary)
+                ScrollView {
+                    VStack(spacing: MomentumSpacing.section) {
+                        // Profile Header Card
+                        ProfileHeaderCard(user: appState.currentUser)
+                            .padding(.horizontal, MomentumSpacing.comfortable)
+                            .padding(.top, MomentumSpacing.standard)
+                            .offset(y: appeared ? 0 : 20)
+                            .opacity(appeared ? 1 : 0)
 
-                        Text("Your settings and stats")
-                            .font(MomentumFont.body())
-                            .foregroundColor(.momentumTextSecondary)
+                        // Navigation Sections
+                        VStack(spacing: MomentumSpacing.compact) {
+                            ProfileNavigationRow(
+                                icon: Ph.trophy.fill,
+                                iconColor: .momentumGold,
+                                title: "Achievements",
+                                subtitle: "\(appState.achievements.count) unlocked",
+                                index: 0,
+                                appeared: appeared
+                            ) {
+                                AchievementsView()
+                            }
+
+                            ProfileNavigationRow(
+                                icon: Ph.brain.fill,
+                                iconColor: .momentumViolet,
+                                title: "AI Memory",
+                                subtitle: "What AI knows about you",
+                                index: 1,
+                                appeared: appeared
+                            ) {
+                                AIMemoryView()
+                            }
+
+                            ProfileNavigationRow(
+                                icon: Ph.bell.fill,
+                                iconColor: .momentumBlueLight,
+                                title: "Notifications",
+                                subtitle: "Manage alerts",
+                                index: 2,
+                                appeared: appeared
+                            ) {
+                                NotificationPreferencesView()
+                            }
+
+                            ProfileNavigationRow(
+                                icon: Ph.sparkle.fill,
+                                iconColor: .momentumBlue,
+                                title: "AI Preferences",
+                                subtitle: (appState.currentUser?.aiPersonality ?? .energetic).displayName,
+                                index: 3,
+                                appeared: appeared
+                            ) {
+                                AIPreferencesView()
+                            }
+
+                            ProfileNavigationRow(
+                                icon: Ph.shield.fill,
+                                iconColor: .momentumSuccess,
+                                title: "Data & Privacy",
+                                subtitle: "Export & manage your data",
+                                index: 4,
+                                appeared: appeared
+                            ) {
+                                DataPrivacyView()
+                            }
+
+                            // Reset Progress (destructive, no navigation)
+                            ProfileActionRow(
+                                icon: Ph.trash.fill,
+                                iconColor: .momentumDanger,
+                                title: "Reset Progress",
+                                subtitle: "Start fresh",
+                                isDestructive: true,
+                                index: 5,
+                                appeared: appeared
+                            ) {
+                                showResetConfirmation = true
+                            }
+                        }
+                        .padding(.horizontal, MomentumSpacing.comfortable)
+
+                        // App Info
+                        AppInfoCard()
+                            .padding(.horizontal, MomentumSpacing.comfortable)
+                            .offset(y: appeared ? 0 : 50)
+                            .opacity(appeared ? 1 : 0)
+
+                        Spacer(minLength: 100)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, MomentumSpacing.comfortable)
-                    .padding(.top, MomentumSpacing.standard)
-
-                    // Stats Card
-                    StatsCard(user: appState.currentUser)
-                        .padding(.horizontal, MomentumSpacing.comfortable)
-                        .offset(y: appeared ? 0 : 20)
-                        .opacity(appeared ? 1 : 0)
-
-                    // AI Personality
-                    AIPersonalityCard(
-                        personality: appState.currentUser?.aiPersonality ?? .energetic,
-                        onChange: { newPersonality in
-                            updatePersonality(newPersonality)
-                        }
-                    )
-                    .padding(.horizontal, MomentumSpacing.comfortable)
-                    .offset(y: appeared ? 0 : 30)
-                    .opacity(appeared ? 1 : 0)
-
-                    // Settings Section
-                    SettingsCard(
-                        onResetTapped: {
-                            showResetConfirmation = true
-                        }
-                    )
-                    .padding(.horizontal, MomentumSpacing.comfortable)
-                    .offset(y: appeared ? 0 : 40)
-                    .opacity(appeared ? 1 : 0)
-
-                    // App Info
-                    AppInfoCard()
-                        .padding(.horizontal, MomentumSpacing.comfortable)
-                        .offset(y: appeared ? 0 : 50)
-                        .opacity(appeared ? 1 : 0)
-
-                    // Bottom spacing for tab bar
-                    Spacer(minLength: 100)
                 }
             }
+            .navigationBarHidden(true)
         }
         .onAppear {
-            withAnimation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.1)) {
+            withAnimation(MomentumAnimation.smoothSpring.delay(0.1)) {
                 appeared = true
             }
         }
@@ -86,57 +126,18 @@ struct ProfileView: View {
             Text("This will delete all your goals, tasks, and progress. This cannot be undone.")
         }
     }
-
-    private func updatePersonality(_ personality: AIPersonality) {
-        guard var user = appState.currentUser else { return }
-        user.aiPersonality = personality
-        appState.currentUser = user
-        // User is auto-saved through Combine publisher when currentUser changes
-    }
 }
 
-// MARK: - Stats Card
+// MARK: - Profile Header Card
 
-struct StatsCard: View {
+struct ProfileHeaderCard: View {
     let user: MomentumUser?
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: MomentumSpacing.standard) {
-            Text("Your Stats")
-                .font(MomentumFont.headingMedium())
-                .foregroundColor(.momentumTextPrimary)
-
-            HStack(spacing: MomentumSpacing.standard) {
-                StatItem(
-                    icon: Ph.flame.fill,
-                    iconColor: .momentumWarning,
-                    value: "\(user?.streakCount ?? 0)",
-                    label: "Current Streak"
-                )
-
-                Divider()
-                    .frame(height: 50)
-
-                StatItem(
-                    icon: Ph.trophy.fill,
-                    iconColor: .momentumSuccess,
-                    value: "\(user?.longestStreak ?? 0)",
-                    label: "Longest Streak"
-                )
-
-                Divider()
-                    .frame(height: 50)
-
-                StatItem(
-                    icon: Ph.calendarCheck.fill,
-                    iconColor: .momentumBlue,
-                    value: daysSinceJoined,
-                    label: "Days Active"
-                )
-            }
-        }
-        .padding(MomentumSpacing.standard)
-        .momentumCard()
+    private var greeting: String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        if hour < 12 { return "Good morning" }
+        else if hour < 17 { return "Good afternoon" }
+        else { return "Good evening" }
     }
 
     private var daysSinceJoined: String {
@@ -144,167 +145,199 @@ struct StatsCard: View {
         let days = Calendar.current.dateComponents([.day], from: user.createdAt, to: Date()).day ?? 0
         return "\(max(1, days))"
     }
-}
 
-// MARK: - Stat Item
-
-struct StatItem: View {
-    let icon: Image
-    let iconColor: Color
-    let value: String
-    let label: String
-
-    var body: some View {
-        VStack(spacing: MomentumSpacing.tight) {
-            icon
-                .frame(width: 24, height: 24)
-                .foregroundColor(iconColor)
-
-            Text(value)
-                .font(MomentumFont.headingMedium())
-                .foregroundColor(.momentumTextPrimary)
-
-            Text(label)
-                .font(MomentumFont.caption())
-                .foregroundColor(.momentumTextSecondary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
+    private var memberSince: String {
+        guard let user = user else { return "" }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM yyyy"
+        return formatter.string(from: user.createdAt)
     }
-}
-
-// MARK: - AI Personality Card
-
-struct AIPersonalityCard: View {
-    let personality: AIPersonality
-    let onChange: (AIPersonality) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: MomentumSpacing.standard) {
-            HStack {
-                Ph.robot.fill
-                    .frame(width: 24, height: 24)
-                    .foregroundColor(.momentumBlue)
+        VStack(spacing: MomentumSpacing.standard) {
+            // Top row: Avatar + Info
+            HStack(spacing: MomentumSpacing.standard) {
+                // Initials circle with gradient
+                ZStack {
+                    Circle()
+                        .fill(MomentumGradients.primary)
+                        .frame(width: 64, height: 64)
 
-                Text("AI Personality")
-                    .font(MomentumFont.headingMedium())
-                    .foregroundColor(.momentumTextPrimary)
-            }
-
-            Text("Choose how your AI assistant communicates")
-                .font(MomentumFont.body(14))
-                .foregroundColor(.momentumTextSecondary)
-
-            VStack(spacing: MomentumSpacing.tight) {
-                ForEach(AIPersonality.allCases, id: \.self) { option in
-                    PersonalityOption(
-                        personality: option,
-                        isSelected: option == personality,
-                        onSelect: { onChange(option) }
-                    )
+                    Text(user?.initials ?? "MU")
+                        .font(.system(size: 24, weight: .bold))
+                        .foregroundColor(.white)
                 }
+                .shadow(color: .momentumBlue.opacity(0.3), radius: 8, y: 2)
+
+                VStack(alignment: .leading, spacing: MomentumSpacing.micro) {
+                    Text("\(greeting),")
+                        .font(MomentumFont.body())
+                        .foregroundColor(.momentumTextSecondary)
+
+                    Text(user?.name ?? "Momentum User")
+                        .font(MomentumFont.headingLarge())
+                        .foregroundColor(.momentumTextPrimary)
+                }
+
+                Spacer()
             }
-        }
-        .padding(MomentumSpacing.standard)
-        .momentumCard()
-    }
-}
 
-// MARK: - Personality Option
+            // Stats row
+            HStack(spacing: 0) {
+                // Streak
+                HStack(spacing: MomentumSpacing.micro) {
+                    Ph.flame.fill
+                        .frame(width: 18, height: 18)
+                        .foregroundColor(.momentumWarning)
 
-struct PersonalityOption: View {
-    let personality: AIPersonality
-    let isSelected: Bool
-    let onSelect: () -> Void
-
-    var body: some View {
-        Button(action: onSelect) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(personality.displayName)
+                    Text("\(user?.streakCount ?? 0)")
                         .font(MomentumFont.bodyMedium())
                         .foregroundColor(.momentumTextPrimary)
 
-                    Text("\"\(personality.sampleMessage)\"")
+                    Text("streak")
                         .font(MomentumFont.caption())
                         .foregroundColor(.momentumTextSecondary)
-                        .italic()
+                }
+                .frame(maxWidth: .infinity)
+
+                // Divider
+                Rectangle()
+                    .fill(Color.momentumCardBorder)
+                    .frame(width: 1, height: 24)
+
+                // Days active
+                HStack(spacing: MomentumSpacing.micro) {
+                    Ph.calendarCheck.fill
+                        .frame(width: 18, height: 18)
+                        .foregroundColor(.momentumBlue)
+
+                    Text(daysSinceJoined)
+                        .font(MomentumFont.bodyMedium())
+                        .foregroundColor(.momentumTextPrimary)
+
+                    Text("days")
+                        .font(MomentumFont.caption())
+                        .foregroundColor(.momentumTextSecondary)
+                }
+                .frame(maxWidth: .infinity)
+
+                // Divider
+                Rectangle()
+                    .fill(Color.momentumCardBorder)
+                    .frame(width: 1, height: 24)
+
+                // Member since
+                HStack(spacing: MomentumSpacing.micro) {
+                    Ph.clock.fill
+                        .frame(width: 18, height: 18)
+                        .foregroundColor(.momentumViolet)
+
+                    Text(memberSince)
+                        .font(MomentumFont.caption())
+                        .foregroundColor(.momentumTextPrimary)
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .padding(.top, MomentumSpacing.tight)
+        }
+        .padding(MomentumSpacing.standard)
+        .background(Color.momentumBackgroundSecondary)
+        .clipShape(RoundedRectangle(cornerRadius: MomentumRadius.large))
+        .overlay(
+            RoundedRectangle(cornerRadius: MomentumRadius.large)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [Color.momentumBlue.opacity(0.3), Color.momentumViolet.opacity(0.2), Color.white.opacity(0.05)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        )
+        .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
+    }
+}
+
+// MARK: - Profile Navigation Row
+
+struct ProfileNavigationRow<Destination: View>: View {
+    let icon: Image
+    let iconColor: Color
+    let title: String
+    let subtitle: String
+    let index: Int
+    let appeared: Bool
+    let destination: () -> Destination
+
+    var body: some View {
+        NavigationLink(destination: destination) {
+            HStack(spacing: MomentumSpacing.standard) {
+                // Icon container
+                ZStack {
+                    RoundedRectangle(cornerRadius: MomentumRadius.small)
+                        .fill(iconColor.opacity(0.12))
+                        .frame(width: 40, height: 40)
+
+                    icon
+                        .frame(width: 20, height: 20)
+                        .foregroundColor(iconColor)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(MomentumFont.bodyMedium())
+                        .foregroundColor(.momentumTextPrimary)
+
+                    Text(subtitle)
+                        .font(MomentumFont.caption())
+                        .foregroundColor(.momentumTextSecondary)
                 }
 
                 Spacer()
 
-                if isSelected {
-                    Ph.checkCircle.fill
-                        .frame(width: 22, height: 22)
-                        .foregroundColor(.momentumBlue)
-                } else {
-                    Circle()
-                        .stroke(Color.momentumTextTertiary, lineWidth: 2)
-                        .frame(width: 22, height: 22)
-                }
+                Ph.caretRight.regular
+                    .frame(width: 16, height: 16)
+                    .foregroundColor(.momentumTextTertiary)
             }
             .padding(MomentumSpacing.compact)
-            .background(
-                RoundedRectangle(cornerRadius: MomentumRadius.small)
-                    .fill(isSelected ? Color.momentumBlue.opacity(0.05) : Color.clear)
+            .background(Color.momentumBackgroundSecondary)
+            .clipShape(RoundedRectangle(cornerRadius: MomentumRadius.medium))
+            .overlay(
+                RoundedRectangle(cornerRadius: MomentumRadius.medium)
+                    .strokeBorder(Color.momentumCardBorder, lineWidth: 0.5)
             )
         }
         .buttonStyle(.plain)
+        .offset(y: appeared ? 0 : 20)
+        .opacity(appeared ? 1 : 0)
+        .animation(MomentumAnimation.staggered(index: index + 1), value: appeared)
     }
 }
 
-// MARK: - Settings Card
+// MARK: - Profile Action Row (non-navigation, e.g. Reset)
 
-struct SettingsCard: View {
-    let onResetTapped: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: MomentumSpacing.standard) {
-            Text("Settings")
-                .font(MomentumFont.headingMedium())
-                .foregroundColor(.momentumTextPrimary)
-
-            VStack(spacing: 0) {
-                SettingsRow(
-                    icon: Ph.bell.regular,
-                    title: "Notifications",
-                    subtitle: "Manage reminders"
-                ) {
-                    // TODO: Open notifications settings
-                }
-
-                Divider()
-
-                SettingsRow(
-                    icon: Ph.trash.regular,
-                    title: "Reset Progress",
-                    subtitle: "Start fresh",
-                    isDestructive: true
-                ) {
-                    onResetTapped()
-                }
-            }
-        }
-        .padding(MomentumSpacing.standard)
-        .momentumCard()
-    }
-}
-
-// MARK: - Settings Row
-
-struct SettingsRow: View {
+struct ProfileActionRow: View {
     let icon: Image
+    let iconColor: Color
     let title: String
     let subtitle: String
     var isDestructive: Bool = false
+    let index: Int
+    let appeared: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack {
-                icon
-                    .frame(width: 22, height: 22)
-                    .foregroundColor(isDestructive ? .momentumDanger : .momentumTextSecondary)
+            HStack(spacing: MomentumSpacing.standard) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: MomentumRadius.small)
+                        .fill(iconColor.opacity(0.12))
+                        .frame(width: 40, height: 40)
+
+                    icon
+                        .frame(width: 20, height: 20)
+                        .foregroundColor(iconColor)
+                }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
@@ -322,9 +355,18 @@ struct SettingsRow: View {
                     .frame(width: 16, height: 16)
                     .foregroundColor(.momentumTextTertiary)
             }
-            .padding(.vertical, MomentumSpacing.compact)
+            .padding(MomentumSpacing.compact)
+            .background(Color.momentumBackgroundSecondary)
+            .clipShape(RoundedRectangle(cornerRadius: MomentumRadius.medium))
+            .overlay(
+                RoundedRectangle(cornerRadius: MomentumRadius.medium)
+                    .strokeBorder(Color.momentumCardBorder, lineWidth: 0.5)
+            )
         }
         .buttonStyle(.plain)
+        .offset(y: appeared ? 0 : 20)
+        .opacity(appeared ? 1 : 0)
+        .animation(MomentumAnimation.staggered(index: index + 1), value: appeared)
     }
 }
 

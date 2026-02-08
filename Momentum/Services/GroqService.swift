@@ -4,6 +4,15 @@
 //
 //  Created by Henry Bowman on 12/29/25.
 //
+//  DEPRECATED: This monolithic service will be replaced by the Phase 3 multi-model architecture.
+//  New code should use the domain-specific services in Services/AI/:
+//    - OnboardingAIService (onboarding questions, plan generation)
+//    - TaskAIService (task evaluation, checklists, weekly tasks)
+//    - ResearchAIService (research queries, synthesis)
+//    - ChatAIService (chat completions, message analysis)
+//  All routed through AIServiceRouter for multi-model support.
+//  This file is kept for backward compatibility during the migration.
+//
 
 import Foundation
 import Combine
@@ -1485,6 +1494,25 @@ class GroqService: ObservableObject {
             summary: response.summary,
             details: response.details,
             sources: response.sources
+        )
+    }
+
+    // MARK: - General Purpose Completion (for new services)
+
+    /// Public completion method for use by other services
+    func completePrompt(
+        systemPrompt: String,
+        userPrompt: String,
+        temperature: Double = 0.7,
+        maxTokens: Int? = nil,
+        requireJSON: Bool = false
+    ) async throws -> String {
+        return try await makeRequest(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            temperature: temperature,
+            maxTokens: maxTokens,
+            requireJSON: requireJSON
         )
     }
 

@@ -26,22 +26,44 @@ struct CelebrationView: View {
                 Color.momentumBackground
                     .ignoresSafeArea()
 
-                // Confetti particles
-                ForEach(0..<20, id: \.self) { index in
+                // Confetti particles — more for a richer effect
+                ForEach(0..<30, id: \.self) { index in
                     ConfettiParticle(
                         color: confettiColors[index % confettiColors.count],
-                        delay: Double(index) * 0.05,
+                        delay: Double(index) * 0.04,
                         containerSize: geometry.size
                     )
                     .opacity(showConfetti ? 1 : 0)
+                }
+
+                // Sparkle burst particles
+                ForEach(0..<12, id: \.self) { index in
+                    SparkleParticle(
+                        color: confettiColors[index % confettiColors.count],
+                        index: index,
+                        total: 12,
+                        isActive: showConfetti
+                    )
+                    .position(x: geometry.size.width / 2, y: geometry.size.height * 0.32)
                 }
 
                 // Main content
                 VStack(spacing: MomentumSpacing.section) {
                 Spacer()
 
-                // Trophy/celebration icon
+                // Trophy/celebration icon with pulsing glow
                 ZStack {
+                    // Outer glow pulse
+                    Circle()
+                        .fill(Color.momentumBlue.opacity(0.08))
+                        .frame(width: 160, height: 160)
+                        .scaleEffect(showConfetti ? 1.15 : 0.9)
+                        .opacity(showConfetti ? 0 : 0.5)
+                        .animation(
+                            .easeInOut(duration: 1.5).repeatForever(autoreverses: true),
+                            value: showConfetti
+                        )
+
                     Circle()
                         .fill(Color.momentumBlue.opacity(0.1))
                         .frame(width: 120, height: 120)
@@ -181,6 +203,50 @@ struct ConfettiParticle: View {
 
                 withAnimation(.easeOut(duration: 0.5).delay(delay + 2)) {
                     opacity = 0
+                }
+            }
+    }
+}
+
+// MARK: - Sparkle Particle (radial burst from center)
+
+struct SparkleParticle: View {
+    let color: Color
+    let index: Int
+    let total: Int
+    let isActive: Bool
+
+    @State private var offset: CGFloat = 0
+    @State private var opacity: Double = 0
+    @State private var scale: CGFloat = 1
+
+    private var angle: Double {
+        (Double(index) / Double(total)) * 360
+    }
+
+    var body: some View {
+        Circle()
+            .fill(color)
+            .frame(width: 6, height: 6)
+            .scaleEffect(scale)
+            .opacity(opacity)
+            .offset(
+                x: offset * CGFloat(cos(angle * .pi / 180)),
+                y: offset * CGFloat(sin(angle * .pi / 180))
+            )
+            .onChange(of: isActive) { _, active in
+                if active {
+                    // Burst outward
+                    withAnimation(.easeOut(duration: 0.6).delay(Double(index) * 0.03)) {
+                        offset = CGFloat.random(in: 60...120)
+                        opacity = 1
+                        scale = CGFloat.random(in: 0.6...1.4)
+                    }
+                    // Fade out
+                    withAnimation(.easeIn(duration: 0.4).delay(0.5 + Double(index) * 0.03)) {
+                        opacity = 0
+                        scale = 0.3
+                    }
                 }
             }
     }

@@ -46,8 +46,7 @@ struct MainTabView: View {
                     GlobalAIChatView(isOverlay: true, onDismiss: {
                         dismissChat()
                     })
-                    .frame(maxHeight: geometry.size.height * 0.85)
-                    .clipShape(RoundedRectangle(cornerRadius: MomentumRadius.large))
+                    .ignoresSafeArea(.container, edges: .bottom)
                     .shadow(color: .black.opacity(0.5), radius: 30, y: -10)
                     .offset(y: chatPanelOffset)
                     .gesture(
@@ -79,7 +78,7 @@ struct MainTabView: View {
                             FloatingAIButton()
                         }
                         .padding(.horizontal, 20)
-                        .padding(.bottom, 16)
+                        .padding(.bottom, 0)
                     }
                 }
             }
@@ -161,12 +160,7 @@ struct FloatingTabBar: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 6)
-            .background(
-                appState.selectedTab == tab
-                    ? Color.white.opacity(0.1)
-                    : Color.clear
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .background(Color.clear)
         }
         .buttonStyle(.plain)
     }

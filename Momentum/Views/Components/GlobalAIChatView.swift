@@ -18,92 +18,20 @@ struct GlobalAIChatView: View {
     var onDismiss: (() -> Void)? = nil
 
     var body: some View {
-        NavigationView {
-            ZStack {
-                Color.momentumBackground
-                    .ignoresSafeArea()
+        ZStack {
+            Color.momentumBackground
+                .ignoresSafeArea()
 
-                VStack(spacing: 0) {
-                    // Task context header (if applicable)
-                    if let task = appState.globalChatTaskContext {
-                        TaskContextHeader(task: task) {
-                            appState.globalChatTaskContext = nil
-                        }
-                    }
+            VStack(spacing: 0) {
+                // Drag handle
+                Capsule()
+                    .fill(Color.momentumTextTertiary.opacity(0.5))
+                    .frame(width: 36, height: 5)
+                    .padding(.top, MomentumSpacing.compact)
+                    .padding(.bottom, MomentumSpacing.tight)
 
-                    // Chat messages
-                    ScrollViewReader { proxy in
-                        ScrollView {
-                            LazyVStack(spacing: MomentumSpacing.compact) {
-                                // AI Greeting
-                                if viewModel.messages.isEmpty {
-                                    GreetingBubble(
-                                        message: viewModel.getGreeting()
-                                    )
-                                    .id("greeting")
-                                }
-
-                                // Messages
-                                ForEach(viewModel.messages) { message in
-                                    MessageBubble(
-                                        message: message,
-                                        onCopy: { viewModel.copyMessage(message) }
-                                    )
-                                    .id(message.id)
-                                }
-
-                                // Thinking indicator
-                                if viewModel.isLoading {
-                                    ThinkingBubble()
-                                        .id("thinking")
-                                }
-                            }
-                            .padding(.horizontal, MomentumSpacing.standard)
-                            .padding(.top, MomentumSpacing.standard)
-                            .padding(.bottom, MomentumSpacing.section)
-                        }
-                        .onChange(of: viewModel.messages.count) { _, _ in
-                            withAnimation {
-                                if let lastMessage = viewModel.messages.last {
-                                    proxy.scrollTo(lastMessage.id, anchor: .bottom)
-                                }
-                            }
-                        }
-                        .onChange(of: viewModel.isLoading) { _, isLoading in
-                            if isLoading {
-                                withAnimation {
-                                    proxy.scrollTo("thinking", anchor: .bottom)
-                                }
-                            }
-                        }
-                    }
-
-                    // Suggested prompts
-                    if viewModel.messages.isEmpty && !viewModel.isLoading {
-                        SuggestedPromptsView(
-                            prompts: viewModel.getSuggestedPrompts()
-                        ) { prompt in
-                            Task {
-                                await viewModel.sendSuggestedPrompt(prompt)
-                            }
-                        }
-                    }
-
-                    // Input area
-                    ChatInputView(
-                        text: $viewModel.inputText,
-                        isLoading: viewModel.isLoading,
-                        isFocused: $isInputFocused
-                    ) {
-                        Task {
-                            await viewModel.sendMessage()
-                        }
-                    }
-                }
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                // Header bar
+                HStack {
                     Menu {
                         Button {
                             viewModel.startNewChat()
@@ -147,9 +75,9 @@ struct GlobalAIChatView: View {
                         }
                         .foregroundColor(.momentumBlue)
                     }
-                }
 
-                ToolbarItem(placement: .principal) {
+                    Spacer()
+
                     HStack(spacing: 6) {
                         Ph.sparkle.fill
                             .frame(width: 18, height: 18)
@@ -159,38 +87,113 @@ struct GlobalAIChatView: View {
                             .font(MomentumFont.bodyMedium())
                             .foregroundColor(.momentumTextPrimary)
                     }
+
+                    Spacer()
+
+                    // Invisible spacer to balance the menu button
+                    Color.clear
+                        .frame(width: 20, height: 20)
+                }
+                .padding(.horizontal, MomentumSpacing.standard)
+                .padding(.bottom, MomentumSpacing.compact)
+
+                Divider()
+                    .background(Color.momentumCardBorder)
+
+                // Task context header (if applicable)
+                if let task = appState.globalChatTaskContext {
+                    TaskContextHeader(task: task) {
+                        appState.globalChatTaskContext = nil
+                    }
                 }
 
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        if let onDismiss = onDismiss {
-                            onDismiss()
-                        } else {
-                            dismiss()
+                // Chat messages
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: MomentumSpacing.compact) {
+                            // AI Greeting
+                            if viewModel.messages.isEmpty {
+                                GreetingBubble(
+                                    message: viewModel.getGreeting()
+                                )
+                                .id("greeting")
+                            }
+
+                            // Messages
+                            ForEach(viewModel.messages) { message in
+                                MessageBubble(
+                                    message: message,
+                                    onCopy: { viewModel.copyMessage(message) }
+                                )
+                                .id(message.id)
+                            }
+
+                            // Thinking indicator
+                            if viewModel.isLoading {
+                                ThinkingBubble()
+                                    .id("thinking")
+                            }
+                        }
+                        .padding(.horizontal, MomentumSpacing.standard)
+                        .padding(.top, MomentumSpacing.standard)
+                        .padding(.bottom, MomentumSpacing.section)
+                    }
+                    .onChange(of: viewModel.messages.count) { _, _ in
+                        withAnimation {
+                            if let lastMessage = viewModel.messages.last {
+                                proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                            }
                         }
                     }
-                    .font(MomentumFont.bodyMedium())
-                    .foregroundColor(.momentumBlue)
+                    .onChange(of: viewModel.isLoading) { _, isLoading in
+                        if isLoading {
+                            withAnimation {
+                                proxy.scrollTo("thinking", anchor: .bottom)
+                            }
+                        }
+                    }
                 }
-            }
-            .onAppear {
-                viewModel.taskContext = appState.globalChatTaskContext
-                // Load most recent chat if no messages and no task context
-                if viewModel.messages.isEmpty && appState.globalChatTaskContext == nil {
-                    if let mostRecent = viewModel.savedChats.first {
-                        viewModel.loadChat(mostRecent)
+
+                // Suggested prompts
+                if viewModel.messages.isEmpty && !viewModel.isLoading {
+                    SuggestedPromptsView(
+                        prompts: viewModel.getSuggestedPrompts()
+                    ) { prompt in
+                        Task {
+                            await viewModel.sendSuggestedPrompt(prompt)
+                        }
+                    }
+                }
+
+                // Input area
+                ChatInputView(
+                    text: $viewModel.inputText,
+                    isLoading: viewModel.isLoading,
+                    isFocused: $isInputFocused
+                ) {
+                    Task {
+                        await viewModel.sendMessage()
                     }
                 }
             }
-            .onDisappear {
-                // Auto-save chat when dismissing if there are messages
-                if !viewModel.messages.isEmpty {
-                    viewModel.saveCurrentChat()
+        }
+        .onAppear {
+            viewModel.taskContext = appState.globalChatTaskContext
+            // Load most recent chat if no messages and no task context
+            if viewModel.messages.isEmpty && appState.globalChatTaskContext == nil {
+                if let mostRecent = viewModel.savedChats.first {
+                    viewModel.loadChat(mostRecent)
                 }
             }
-            .sheet(isPresented: $viewModel.showSavedChats) {
-                SavedChatsListView(viewModel: viewModel)
+        }
+        .onDisappear {
+            // Auto-save chat when dismissing if there are messages
+            if !viewModel.messages.isEmpty {
+                viewModel.saveCurrentChat()
             }
+        }
+        .sheet(isPresented: $viewModel.showSavedChats) {
+            SavedChatsListView(viewModel: viewModel)
         }
     }
 }

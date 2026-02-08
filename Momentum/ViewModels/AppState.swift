@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Combine
+import WidgetKit
 
 @MainActor
 class AppState: ObservableObject {
@@ -16,6 +17,15 @@ class AppState: ObservableObject {
     @Published var currentUser: MomentumUser?
     @Published var goals: [Goal] = []
     @Published var achievements: [Achievement] = []
+
+    // AI Memory
+    @Published var aiMemoryEntries: [AIMemoryEntry] = []
+
+    // Content Drafts
+    @Published var drafts: [DraftContent] = []
+
+    // Calendar
+    @Published var calendarAccessGranted: Bool = false
 
     // AI Feed System
     @Published var aiFeedItems: [AIFeedItem] = []
@@ -42,6 +52,15 @@ class AppState: ObservableObject {
 
     // Briefing Engine
     @Published var briefingEngine = BriefingEngine()
+
+    // Notification Service
+    @Published var notificationService = NotificationService()
+
+    // Phase 4 Services
+    @Published var researchPipeline = ResearchPipelineService()
+    @Published var contentDraftingService = ContentDraftingService()
+    @Published var calendarService = CalendarService()
+    @Published var aiMemoryService = AIMemoryService()
 
     // AI Service
     private let groqService = GroqService.shared
@@ -76,6 +95,9 @@ class AppState: ObservableObject {
         static let pendingQuestionnaires = "pendingQuestionnaires"
         static let pendingToolPrompts = "pendingToolPrompts"
         static let aiReports = "aiReports"
+        static let aiMemoryEntries = "aiMemoryEntries"
+        static let drafts = "drafts"
+        static let calendarAccessGranted = "calendarAccessGranted"
         static let migrationVersion = "migrationVersion"
     }
 
@@ -226,6 +248,18 @@ class AppState: ObservableObject {
             aiReports = loadedReports
         }
 
+        if let memoryData = defaults.data(forKey: StorageKeys.aiMemoryEntries),
+           let loadedMemory = try? JSONDecoder().decode([AIMemoryEntry].self, from: memoryData) {
+            aiMemoryEntries = loadedMemory
+        }
+
+        if let draftsData = defaults.data(forKey: StorageKeys.drafts),
+           let loadedDrafts = try? JSONDecoder().decode([DraftContent].self, from: draftsData) {
+            drafts = loadedDrafts
+        }
+
+        calendarAccessGranted = defaults.bool(forKey: StorageKeys.calendarAccessGranted)
+
         refreshAIFeed()
     }
 
@@ -274,6 +308,40 @@ class AppState: ObservableObject {
         if let data = try? encoder.encode(aiReports) {
             defaults.set(data, forKey: StorageKeys.aiReports)
         }
+
+        if let data = try? encoder.encode(aiMemoryEntries) {
+            defaults.set(data, forKey: StorageKeys.aiMemoryEntries)
+        }
+
+        if let data = try? encoder.encode(drafts) {
+            defaults.set(data, forKey: StorageKeys.drafts)
+        }
+
+        defaults.set(calendarAccessGranted, forKey: StorageKeys.calendarAccessGranted)
+
+        // Update widget data in shared App Group container
+        updateWidgetData()
+    }
+
+    /// Write current state to the shared App Group container for the widget.
+    private func updateWidgetData() {
+        let topTasks = todaysTasks.prefix(3).map { $0.title }
+        let insight = currentBriefing?.insight
+
+        let widgetData = WidgetData(
+            streakCount: streakCount,
+            tasksRemaining: todaysTasks.filter { $0.status == .pending }.count,
+            tasksCompleted: completedTodaysTasks.count,
+            totalTasks: todaysTasks.count + completedTodaysTasks.count,
+            topTaskTitles: Array(topTasks),
+            aiInsight: insight,
+            goalDomain: activeGoal?.domain.rawValue,
+            milestoneName: currentMilestone?.title,
+            milestoneProgress: (currentMilestone?.completionPercentage ?? 0) / 100.0,
+            lastUpdated: Date()
+        )
+        widgetData.save()
+        WidgetCenter.shared.reloadAllTimelines()
     }
 
     private func setupAutoSave() {
@@ -341,7 +409,13 @@ class AppState: ObservableObject {
         isOnboarded = true
         saveState()
 
+        // Request notification permission and schedule default notifications
         Task {
+            let granted = await notificationService.requestPermission()
+            if granted {
+                notificationService.scheduleMorningBriefing(at: 8, minute: 0)
+                notificationService.scheduleStreakReminder()
+            }
             await evaluateTodaysTasks()
         }
     }
@@ -502,6 +576,7 @@ class AppState: ObservableObject {
 
         userPreferences.userSkills[question.skill] = answer
         refreshAIFeed()
+        saveState()
 
         Task {
             await evaluateTodaysTasks()
@@ -566,6 +641,10 @@ class AppState: ObservableObject {
         checkAchievements()
         getPersonalizedCompletionMessage(forTask: task)
 
+        // Cancel task reminder and streak reminder for today
+        notificationService.cancelTaskReminder(taskId: task.id)
+        notificationService.cancelStreakReminderForToday()
+
         let allComplete = todaysTasks.allSatisfy { $0.status == .completed }
         if allComplete && !hasMorePendingTasks {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
@@ -627,7 +706,14 @@ class AppState: ObservableObject {
     }
 
     private func advanceToNextMilestone(goalIndex: Int) {
-        let nextIndex = goals[goalIndex].currentMilestoneIndex + 1
+        // Send milestone completion notification for the just-completed milestone
+        let completedIndex = goals[goalIndex].currentMilestoneIndex
+        if completedIndex < goals[goalIndex].milestones.count {
+            let completedMilestone = goals[goalIndex].milestones[completedIndex]
+            notificationService.scheduleMilestoneAlert(milestone: completedMilestone)
+        }
+
+        let nextIndex = completedIndex + 1
 
         if nextIndex < goals[goalIndex].milestones.count {
             goals[goalIndex].currentMilestoneIndex = nextIndex
@@ -698,6 +784,11 @@ class AppState: ObservableObject {
             if let goalIndex = goals.firstIndex(where: { $0.id == goal.id }),
                let milestoneIndex = goals[goalIndex].milestones.firstIndex(where: { $0.id == milestone.id }) {
                 goals[goalIndex].milestones[milestoneIndex].tasks.append(contentsOf: newTasks)
+            }
+
+            // Schedule reminders for new tasks
+            for task in newTasks {
+                notificationService.scheduleTaskReminder(for: task)
             }
 
             await evaluateTodaysTasks()
@@ -910,6 +1001,111 @@ class AppState: ObservableObject {
         aiProcessor.submitAnswer(for: questionId, answer: answer)
     }
 
+    // MARK: - AI Memory Management
+
+    func deleteMemoryEntry(_ entry: AIMemoryEntry) {
+        aiMemoryEntries.removeAll { $0.id == entry.id }
+        saveState()
+    }
+
+    func clearAllMemoryEntries() {
+        aiMemoryEntries.removeAll()
+        saveState()
+    }
+
+    func clearChatHistory() {
+        for goalIndex in goals.indices {
+            for milestoneIndex in goals[goalIndex].milestones.indices {
+                for taskIndex in goals[goalIndex].milestones[milestoneIndex].tasks.indices {
+                    goals[goalIndex].milestones[milestoneIndex].tasks[taskIndex].notes.conversationHistory.removeAll()
+                }
+            }
+        }
+        saveState()
+    }
+
+    // MARK: - Research Pipeline
+
+    /// Trigger research for a query and save results
+    func triggerResearch(query: String, taskId: UUID? = nil) async {
+        guard let goal = activeGoal else { return }
+        let goalContext = goal.visionRefined ?? goal.visionText
+
+        let result = await researchPipeline.executeResearch(
+            query: query,
+            taskContext: goalContext,
+            taskTitle: query,
+            goalId: goal.id,
+            taskId: taskId
+        )
+
+        if let result = result {
+            if let entry = result.knowledgeEntry {
+                addToKnowledgeBase(entry)
+            }
+            if let report = result.report {
+                aiReports.insert(report, at: 0)
+                refreshAIFeed()
+            }
+        }
+    }
+
+    // MARK: - Content Drafting
+
+    /// Generate a content draft and save it
+    func generateDraft(type: DraftType, title: String, taskId: UUID? = nil, additionalInstructions: String? = nil) async {
+        guard let goal = activeGoal else { return }
+        let goalContext = goal.visionRefined ?? goal.visionText
+
+        let draft = await contentDraftingService.generateDraft(
+            type: type,
+            title: title,
+            context: goalContext,
+            goalId: goal.id,
+            taskId: taskId,
+            additionalInstructions: additionalInstructions
+        )
+
+        if let draft = draft {
+            drafts.insert(draft, at: 0)
+            saveState()
+        }
+    }
+
+    /// Update a draft's status
+    func updateDraftStatus(_ draft: DraftContent, status: DraftStatus) {
+        if let index = drafts.firstIndex(where: { $0.id == draft.id }) {
+            drafts[index].status = status
+            drafts[index].updatedAt = Date()
+            saveState()
+        }
+    }
+
+    /// Delete a draft
+    func deleteDraft(_ draft: DraftContent) {
+        drafts.removeAll { $0.id == draft.id }
+        saveState()
+    }
+
+    // MARK: - Calendar Integration
+
+    /// Request calendar access and update state
+    func requestCalendarAccess() async {
+        let granted = await calendarService.requestAccess()
+        calendarAccessGranted = granted
+        saveState()
+    }
+
+    /// Schedule a focus session for a task
+    func scheduleFocusSession(for task: MomentumTask, duration: Int) async {
+        guard calendarAccessGranted else { return }
+        do {
+            try await calendarService.scheduleFocusSession(for: task, duration: duration)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     // MARK: - Helper Methods
 
     func getGoalName(for task: MomentumTask) -> String {
@@ -937,6 +1133,9 @@ class AppState: ObservableObject {
         pendingQuestionnaires = []
         pendingToolPrompts = []
         aiReports = []
+        aiMemoryEntries = []
+        drafts = []
+        calendarAccessGranted = false
         userSkills = [:]
         userPreferences = UserPreferences()
         knowledgeBase = []
@@ -945,7 +1144,9 @@ class AppState: ObservableObject {
         for key in [StorageKeys.isOnboarded, StorageKeys.currentUser, StorageKeys.goals,
                     StorageKeys.achievements, StorageKeys.userSkills, StorageKeys.userPreferences,
                     StorageKeys.knowledgeBase, StorageKeys.pendingSkillQuestions,
-                    StorageKeys.pendingQuestionnaires, StorageKeys.pendingToolPrompts, StorageKeys.aiReports] {
+                    StorageKeys.pendingQuestionnaires, StorageKeys.pendingToolPrompts,
+                    StorageKeys.aiReports, StorageKeys.aiMemoryEntries,
+                    StorageKeys.drafts, StorageKeys.calendarAccessGranted] {
             defaults.removeObject(forKey: key)
         }
     }
