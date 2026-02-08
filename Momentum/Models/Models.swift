@@ -63,7 +63,7 @@ enum ModelPreference: String, Codable, CaseIterable {
         switch self {
         case .auto: return "Auto"
         case .fast: return "Fast (Groq)"
-        case .balanced: return "Balanced"
+        case .balanced: return "Balanced (OpenAI)"
         }
     }
 
@@ -71,7 +71,7 @@ enum ModelPreference: String, Codable, CaseIterable {
         switch self {
         case .auto: return "Let Momentum choose the best model"
         case .fast: return "Fastest responses, great for most tasks"
-        case .balanced: return "Better reasoning for complex tasks"
+        case .balanced: return "GPT-4o for complex reasoning tasks"
         }
     }
 }

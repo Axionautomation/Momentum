@@ -161,7 +161,7 @@ class ChatAIService: ObservableObject {
         return try JSONDecoder().decode(GroqService.BriefingContent.self, from: data)
     }
 
-    // MARK: - Streaming Chat (Claude)
+    // MARK: - Streaming Chat (OpenAI)
 
     func streamChat(
         systemPrompt: String,
@@ -169,10 +169,10 @@ class ChatAIService: ObservableObject {
         temperature: Double = 0.7,
         maxTokens: Int = 4096
     ) -> AsyncThrowingStream<String, Error>? {
-        guard let claudeProvider = router.streamingProvider() else {
+        guard let openAIProvider = router.streamingProvider() else {
             return nil
         }
-        return claudeProvider.stream(
+        return openAIProvider.stream(
             systemPrompt: systemPrompt,
             userPrompt: userPrompt,
             temperature: temperature,

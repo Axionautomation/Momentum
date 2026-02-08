@@ -48,8 +48,8 @@ enum AIError: LocalizedError {
 
 enum CostTier: String, Codable, Comparable {
     case fast       // Groq (llama) — cheapest, fastest
-    case standard   // Claude Haiku — balanced
-    case premium    // Claude Sonnet/Opus — most capable
+    case standard   // OpenAI GPT-4o-mini — balanced
+    case premium    // OpenAI GPT-4o — most capable
 
     private var sortOrder: Int {
         switch self {
@@ -93,11 +93,11 @@ class AIServiceRouter: ObservableObject {
         let groqProvider = GroqProvider()
         providers[.fast] = groqProvider
 
-        // Claude provider — registered if API key is configured
-        if !Config.claudeAPIKey.isEmpty && Config.claudeAPIKey != "YOUR_CLAUDE_API_KEY_HERE" {
-            let claudeProvider = ClaudeProvider()
-            providers[.standard] = claudeProvider
-            providers[.premium] = claudeProvider
+        // OpenAI provider — registered if API key is configured
+        if !Config.openAIAPIKey.isEmpty && Config.openAIAPIKey != "YOUR_OPENAI_API_KEY_HERE" {
+            let openAIProvider = OpenAIProvider()
+            providers[.standard] = openAIProvider
+            providers[.premium] = openAIProvider
         }
 
         print("[AIServiceRouter] Initialized with providers: \(providers.keys.map { $0.rawValue })")
@@ -142,9 +142,9 @@ class AIServiceRouter: ObservableObject {
         throw AIError.allProvidersFailed(errors: errors)
     }
 
-    /// Get the streaming provider for real-time chat (Claude only)
-    func streamingProvider() -> ClaudeProvider? {
-        providers[.standard] as? ClaudeProvider ?? providers[.premium] as? ClaudeProvider
+    /// Get the streaming provider for real-time chat (OpenAI)
+    func streamingProvider() -> OpenAIProvider? {
+        providers[.standard] as? OpenAIProvider ?? providers[.premium] as? OpenAIProvider
     }
 
     // MARK: - Provider Management

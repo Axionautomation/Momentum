@@ -1,32 +1,29 @@
 //
-//  ClaudeProvider.swift
+//  OpenAIProvider.swift
 //  Momentum
 //
 //  Phase 3: Multi-Model AI Architecture
-//  Implements the Anthropic Messages API for complex reasoning tasks.
+//  Implements the OpenAI Chat Completions API for complex reasoning tasks.
 //
 
 import Foundation
 
-final class ClaudeProvider: AIProvider, @unchecked Sendable {
-    let name = "Claude"
+final class OpenAIProvider: AIProvider, @unchecked Sendable {
+    let name = "OpenAI"
     let costTier: CostTier = .premium
 
     private let apiKey: String
     private let model: String
-    private let apiVersion: String
     private let baseURL: String
     private let session: URLSession
 
     init(
-        apiKey: String = Config.claudeAPIKey,
-        model: String = Config.claudeModel,
-        apiVersion: String = "2023-06-01",
-        baseURL: String = "https://api.anthropic.com/v1"
+        apiKey: String = Config.openAIAPIKey,
+        model: String = Config.openAIModel,
+        baseURL: String = "https://api.openai.com/v1"
     ) {
         self.apiKey = apiKey
         self.model = model
-        self.apiVersion = apiVersion
         self.baseURL = baseURL
 
         let config = URLSessionConfiguration.default
@@ -42,75 +39,85 @@ final class ClaudeProvider: AIProvider, @unchecked Sendable {
 
     // MARK: - Request/Response Models
 
-    private struct ClaudeRequest: Codable {
+    private struct OpenAIRequest: Codable {
         let model: String
-        let maxTokens: Int
-        let system: String?
         let messages: [Message]
         let temperature: Double?
+        let maxTokens: Int?
+        let responseFormat: ResponseFormat?
+        let stream: Bool?
 
         enum CodingKeys: String, CodingKey {
-            case model
+            case model, messages, temperature, stream
             case maxTokens = "max_tokens"
-            case system, messages, temperature
+            case responseFormat = "response_format"
         }
 
         struct Message: Codable {
             let role: String
             let content: String
         }
+
+        struct ResponseFormat: Codable {
+            let type: String
+        }
     }
 
-    private struct ClaudeResponse: Codable {
+    private struct OpenAIResponse: Codable {
         let id: String
-        let type: String
-        let role: String
-        let content: [ContentBlock]
-        let model: String
+        let choices: [Choice]
         let usage: Usage?
 
-        struct ContentBlock: Codable {
-            let type: String
-            let text: String?
+        struct Choice: Codable {
+            let message: ChoiceMessage
+
+            struct ChoiceMessage: Codable {
+                let role: String
+                let content: String?
+            }
         }
 
         struct Usage: Codable {
-            let inputTokens: Int
-            let outputTokens: Int
+            let promptTokens: Int
+            let completionTokens: Int
+            let totalTokens: Int
 
             enum CodingKeys: String, CodingKey {
-                case inputTokens = "input_tokens"
-                case outputTokens = "output_tokens"
+                case promptTokens = "prompt_tokens"
+                case completionTokens = "completion_tokens"
+                case totalTokens = "total_tokens"
             }
         }
     }
 
-    private struct ClaudeErrorResponse: Codable {
-        let type: String
+    private struct OpenAIErrorResponse: Codable {
         let error: ErrorDetail
 
         struct ErrorDetail: Codable {
-            let type: String
             let message: String
+            let type: String?
+            let code: String?
         }
     }
 
     // MARK: - Streaming Event Models
 
-    private struct StreamEvent {
-        let type: String
-        let data: String
+    private struct StreamChoice: Codable {
+        let delta: StreamDelta?
+        let finishReason: String?
+
+        enum CodingKeys: String, CodingKey {
+            case delta
+            case finishReason = "finish_reason"
+        }
     }
 
     private struct StreamDelta: Codable {
-        let type: String?
-        let text: String?
+        let content: String?
     }
 
-    private struct StreamContentBlockDelta: Codable {
-        let type: String
-        let index: Int?
-        let delta: StreamDelta?
+    private struct StreamChunk: Codable {
+        let choices: [StreamChoice]
     }
 
     // MARK: - AIProvider Conformance
@@ -169,35 +176,33 @@ final class ClaudeProvider: AIProvider, @unchecked Sendable {
         requireJSON: Bool,
         retryCount: Int
     ) async throws -> String {
-        guard let url = URL(string: "\(baseURL)/messages") else {
+        guard let url = URL(string: "\(baseURL)/chat/completions") else {
             throw AIError.invalidURL
         }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
-        request.setValue(apiVersion, forHTTPHeaderField: "anthropic-version")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 60
 
-        // If JSON is required, prepend instruction to the system prompt
-        let effectiveSystemPrompt = requireJSON
-            ? systemPrompt + "\n\nIMPORTANT: You MUST respond with ONLY valid JSON. No markdown, no explanation, just the JSON object."
-            : systemPrompt
+        let messages = [
+            OpenAIRequest.Message(role: "system", content: systemPrompt),
+            OpenAIRequest.Message(role: "user", content: userPrompt)
+        ]
 
-        let claudeRequest = ClaudeRequest(
+        let openAIRequest = OpenAIRequest(
             model: model,
+            messages: messages,
+            temperature: temperature,
             maxTokens: maxTokens,
-            system: effectiveSystemPrompt,
-            messages: [
-                ClaudeRequest.Message(role: "user", content: userPrompt)
-            ],
-            temperature: temperature
+            responseFormat: requireJSON ? OpenAIRequest.ResponseFormat(type: "json_object") : nil,
+            stream: nil
         )
 
-        request.httpBody = try JSONEncoder().encode(claudeRequest)
+        request.httpBody = try JSONEncoder().encode(openAIRequest)
 
-        print("[ClaudeProvider] Making request (attempt \(retryCount + 1))...")
+        print("[OpenAIProvider] Making request (attempt \(retryCount + 1))...")
 
         do {
             let (data, response) = try await session.data(for: request)
@@ -206,7 +211,7 @@ final class ClaudeProvider: AIProvider, @unchecked Sendable {
                 throw AIError.invalidResponse
             }
 
-            print("[ClaudeProvider] HTTP Status: \(httpResponse.statusCode)")
+            print("[OpenAIProvider] HTTP Status: \(httpResponse.statusCode)")
 
             guard httpResponse.statusCode == 200 else {
                 // Retry on server errors or rate limiting
@@ -214,7 +219,7 @@ final class ClaudeProvider: AIProvider, @unchecked Sendable {
                     if retryCount < 3 {
                         let retryAfter = httpResponse.value(forHTTPHeaderField: "retry-after")
                         let delay = Double(retryAfter ?? "") ?? Double(retryCount + 1) * 2
-                        print("[ClaudeProvider] Error \(httpResponse.statusCode), retrying in \(delay)s...")
+                        print("[OpenAIProvider] Error \(httpResponse.statusCode), retrying in \(delay)s...")
                         try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                         return try await makeRequest(
                             systemPrompt: systemPrompt,
@@ -228,8 +233,8 @@ final class ClaudeProvider: AIProvider, @unchecked Sendable {
                 }
 
                 // Try to decode error response
-                if let errorResponse = try? JSONDecoder().decode(ClaudeErrorResponse.self, from: data) {
-                    throw AIError.apiError("\(errorResponse.error.type): \(errorResponse.error.message)")
+                if let errorResponse = try? JSONDecoder().decode(OpenAIErrorResponse.self, from: data) {
+                    throw AIError.apiError("\(errorResponse.error.type ?? "error"): \(errorResponse.error.message)")
                 }
                 if let errorString = String(data: data, encoding: .utf8) {
                     throw AIError.apiError("Status \(httpResponse.statusCode): \(errorString)")
@@ -237,19 +242,18 @@ final class ClaudeProvider: AIProvider, @unchecked Sendable {
                 throw AIError.apiError("Status code: \(httpResponse.statusCode)")
             }
 
-            let claudeResponse = try JSONDecoder().decode(ClaudeResponse.self, from: data)
+            let openAIResponse = try JSONDecoder().decode(OpenAIResponse.self, from: data)
 
-            guard let textBlock = claudeResponse.content.first(where: { $0.type == "text" }),
-                  let text = textBlock.text else {
+            guard let content = openAIResponse.choices.first?.message.content else {
                 throw AIError.invalidResponse
             }
 
-            if let usage = claudeResponse.usage {
-                print("[ClaudeProvider] Tokens — in: \(usage.inputTokens), out: \(usage.outputTokens)")
+            if let usage = openAIResponse.usage {
+                print("[OpenAIProvider] Tokens — in: \(usage.promptTokens), out: \(usage.completionTokens)")
             }
 
-            print("[ClaudeProvider] Received response (\(text.count) characters)")
-            return text
+            print("[OpenAIProvider] Received response (\(content.count) characters)")
+            return content
 
         } catch let error as AIError {
             throw error
@@ -258,7 +262,7 @@ final class ClaudeProvider: AIProvider, @unchecked Sendable {
             let retryableCodes = [-1001, -1004, -1005, -1009, -1020]
             if nsError.domain == NSURLErrorDomain && retryableCodes.contains(nsError.code) && retryCount < 3 {
                 let delay = pow(2.0, Double(retryCount + 1))
-                print("[ClaudeProvider] Network error (\(nsError.code)), retrying in \(delay)s...")
+                print("[OpenAIProvider] Network error (\(nsError.code)), retrying in \(delay)s...")
                 try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                 return try await makeRequest(
                     systemPrompt: systemPrompt,
@@ -282,46 +286,33 @@ final class ClaudeProvider: AIProvider, @unchecked Sendable {
         maxTokens: Int,
         continuation: AsyncThrowingStream<String, Error>.Continuation
     ) async throws {
-        guard let url = URL(string: "\(baseURL)/messages") else {
+        guard let url = URL(string: "\(baseURL)/chat/completions") else {
             throw AIError.invalidURL
         }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
-        request.setValue(apiVersion, forHTTPHeaderField: "anthropic-version")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 120
 
-        struct StreamingClaudeRequest: Codable {
-            let model: String
-            let maxTokens: Int
-            let system: String?
-            let messages: [ClaudeRequest.Message]
-            let temperature: Double?
-            let stream: Bool
+        let messages = [
+            OpenAIRequest.Message(role: "system", content: systemPrompt),
+            OpenAIRequest.Message(role: "user", content: userPrompt)
+        ]
 
-            enum CodingKeys: String, CodingKey {
-                case model
-                case maxTokens = "max_tokens"
-                case system, messages, temperature, stream
-            }
-        }
-
-        let streamRequest = StreamingClaudeRequest(
+        let streamRequest = OpenAIRequest(
             model: model,
-            maxTokens: maxTokens,
-            system: systemPrompt,
-            messages: [
-                ClaudeRequest.Message(role: "user", content: userPrompt)
-            ],
+            messages: messages,
             temperature: temperature,
+            maxTokens: maxTokens,
+            responseFormat: nil,
             stream: true
         )
 
         request.httpBody = try JSONEncoder().encode(streamRequest)
 
-        print("[ClaudeProvider] Starting streaming request...")
+        print("[OpenAIProvider] Starting streaming request...")
 
         let (bytes, response) = try await session.bytes(for: request)
 
@@ -330,29 +321,23 @@ final class ClaudeProvider: AIProvider, @unchecked Sendable {
             throw AIError.apiError("Streaming failed with status \(statusCode)")
         }
 
-        // Parse SSE events
-        var currentEventType = ""
-
+        // Parse SSE events (OpenAI format: "data: {json}\n" or "data: [DONE]\n")
         for try await line in bytes.lines {
-            if line.hasPrefix("event: ") {
-                currentEventType = String(line.dropFirst(7))
-            } else if line.hasPrefix("data: ") {
-                let dataString = String(line.dropFirst(6))
+            guard line.hasPrefix("data: ") else { continue }
 
-                if currentEventType == "content_block_delta" {
-                    if let data = dataString.data(using: .utf8),
-                       let delta = try? JSONDecoder().decode(StreamContentBlockDelta.self, from: data),
-                       let text = delta.delta?.text {
-                        continuation.yield(text)
-                    }
-                } else if currentEventType == "message_stop" {
-                    break
-                } else if currentEventType == "error" {
-                    throw AIError.apiError("Stream error: \(dataString)")
-                }
+            let dataString = String(line.dropFirst(6))
+
+            if dataString == "[DONE]" {
+                break
+            }
+
+            if let data = dataString.data(using: .utf8),
+               let chunk = try? JSONDecoder().decode(StreamChunk.self, from: data),
+               let content = chunk.choices.first?.delta?.content {
+                continuation.yield(content)
             }
         }
 
-        print("[ClaudeProvider] Streaming complete")
+        print("[OpenAIProvider] Streaming complete")
     }
 }
