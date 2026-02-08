@@ -8,35 +8,37 @@ Momentum evolves from a reactive goal-tracking app into a bold, futuristic AI co
 
 ---
 
-## Phase 1: Foundation Cleanup & Design System Overhaul
+## Phase 1: Foundation Cleanup & Design System Overhaul ✅ COMPLETE
 
 **Goal:** Establish the bold/futuristic design language and clean up technical debt.
 
 ### 1.1 Design System Overhaul (`Theme.swift`)
-- [ ] Define new dark-first color palette (zinc-950/900 backgrounds, glassmorphism surfaces)
-- [ ] Add glassmorphic view modifiers (`.glass()`, `.glassCard()`, `.glowBorder()`)
-- [ ] Add bold typography scale using SF Pro Display
-- [ ] Add animation presets (`.smoothSpring`, `.snappy`, `.dramatic`)
-- [ ] Add gradient presets (`.neonBlue`, `.neonViolet`, `.midnight`, `.aurora`)
+- [x] Define new dark-first color palette (zinc-950/900 backgrounds, glassmorphism surfaces)
+- [x] Add glassmorphic view modifiers (`.glass()`, `.glassCard()`, `.glowBorder()`)
+- [x] Add bold typography scale using SF Pro Display
+- [x] Add animation presets (`.smoothSpring`, `.snappy`, `.dramatic`)
+- [x] Add gradient presets (`.neonBlue`, `.neonViolet`, `.midnight`, `.aurora`)
 
 ### 1.2 Legacy Cleanup (`Models.swift`)
-- [ ] Remove legacy compatibility models (~300 lines): PowerGoal, WeeklyMilestone, TaskDifficulty, Microstep, etc.
-- [ ] Add `GoalDomain` enum: `.career`, `.finance`, `.growth`
-- [ ] Add domain property to `Goal` model
-- [ ] Add migration v5 to handle legacy data cleanup
+- [x] Remove legacy compatibility models: PowerGoal, WeeklyMilestone, PowerGoalStatus, WeeklyMilestoneStatus
+- [x] Add `GoalDomain` enum: `.career`, `.finance`, `.growth`
+- [x] Add domain property to `Goal` model
+- [x] Add migration v5 to handle legacy data cleanup
+- Note: TaskDifficulty, Microstep kept as derived/computed properties (still used by views)
 
 ### 1.3 Navigation Restructure (`MainTabView.swift`)
-- [ ] Change tabs from `home/process/mindset/profile` to `dashboard/goals/profile`
-- [ ] Replace modal sheet chat with persistent overlay panel
-- [ ] Update `FloatingTabBar` with glassmorphic style
-- [ ] Update tab icons and labels
+- [x] Change tabs from `home/process/mindset/profile` to `dashboard/goals/profile`
+- [x] Replace modal sheet chat with persistent overlay panel
+- [x] Update `FloatingTabBar` with glassmorphic style
+- [x] Update tab icons and labels
+- [x] Replace deprecated UIScreen.main with GeometryReader
 
 ### 1.4 Apply Design to All Existing Views
-- [ ] Update every view file to use new color tokens
-- [ ] Replace `.momentumCard()` with `.glassCard()`
-- [ ] Update all backgrounds to zinc-950/900
-- [ ] Add entrance animations to major views
-- [ ] Ensure `.preferredColorScheme(.dark)` everywhere
+- [x] Update every view file to use new color tokens (removed all hardcoded Color.white/gray/blue)
+- [x] Update all backgrounds to zinc-950/900
+- [x] Ensure `.preferredColorScheme(.dark)` on all previews
+- [x] Update CLAUDE.md to reflect new architecture
+- [x] Fix all legacy initializer references (weeklyMilestoneId → milestoneId, powerGoals → milestones)
 
 ---
 

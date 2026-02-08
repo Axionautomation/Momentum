@@ -540,18 +540,17 @@ struct HoldToCompleteButton: View {
 
 #Preview {
     let sampleTask = MomentumTask(
-        weeklyMilestoneId: UUID(),
+        milestoneId: UUID(),
         goalId: UUID(),
         title: "Research competitor landing pages",
         taskDescription: "Look at 5-10 competitor sites and note what works well for inspiration",
-        difficulty: .medium,
-        estimatedMinutes: 30,
-        scheduledDate: Date(),
-        microsteps: [
-            Microstep(taskId: UUID(), stepText: "Find 5 competitor sites", orderIndex: 0),
-            Microstep(taskId: UUID(), stepText: "Screenshot best sections", orderIndex: 1),
-            Microstep(taskId: UUID(), stepText: "Note common patterns", orderIndex: 2)
-        ]
+        checklist: [
+            ChecklistItem(text: "Find 5 competitor sites", estimatedMinutes: 10, orderIndex: 0),
+            ChecklistItem(text: "Screenshot best sections", estimatedMinutes: 10, orderIndex: 1),
+            ChecklistItem(text: "Note common patterns", estimatedMinutes: 10, orderIndex: 2)
+        ],
+        totalEstimatedMinutes: 30,
+        scheduledDate: Date()
     )
 
     TaskDetailView(

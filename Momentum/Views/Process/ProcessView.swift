@@ -81,8 +81,8 @@ struct ProcessView: View {
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
 
-                        if let powerGoal = project.powerGoals.first(where: { $0.status == .active }) {
-                            Text("Phase \(powerGoal.monthNumber) of 12")
+                        if let milestone = project.milestones.first(where: { $0.status == .active }) {
+                            Text("Phase \(milestone.sequenceNumber) of 12")
                                 .font(MomentumFont.label())
                                 .foregroundColor(.momentumTextSecondary)
                         }

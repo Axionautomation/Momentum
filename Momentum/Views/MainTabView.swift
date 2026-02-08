@@ -10,75 +10,82 @@ import PhosphorSwift
 
 struct MainTabView: View {
     @EnvironmentObject var appState: AppState
-    @State private var chatPanelOffset: CGFloat = UIScreen.main.bounds.height
+    @State private var chatPanelOffset: CGFloat = 1000
     @State private var showChatPanel: Bool = false
+    @State private var screenHeight: CGFloat = 1000
 
     var body: some View {
-        ZStack {
-            // Dark background
-            Color.momentumBackground
-                .ignoresSafeArea()
-
-            // Current view based on selection
-            Group {
-                switch appState.selectedTab {
-                case .dashboard:
-                    HomeView()
-                case .goals:
-                    ProcessView()
-                case .profile:
-                    ProfileView()
-                }
-            }
-            .transition(.opacity)
-
-            // Chat overlay panel
-            if showChatPanel {
-                Color.black.opacity(0.4)
+        GeometryReader { geometry in
+            ZStack {
+                // Dark background
+                Color.momentumBackground
                     .ignoresSafeArea()
-                    .onTapGesture {
-                        dismissChat()
-                    }
-                    .transition(.opacity)
 
-                GlobalAIChatView(isOverlay: true, onDismiss: {
-                    dismissChat()
-                })
-                .frame(maxHeight: UIScreen.main.bounds.height * 0.85)
-                .clipShape(RoundedRectangle(cornerRadius: MomentumRadius.large))
-                .shadow(color: .black.opacity(0.5), radius: 30, y: -10)
-                .offset(y: chatPanelOffset)
-                .gesture(
-                    DragGesture()
-                        .onChanged { value in
-                            if value.translation.height > 0 {
-                                chatPanelOffset = value.translation.height
-                            }
+                // Current view based on selection
+                Group {
+                    switch appState.selectedTab {
+                    case .dashboard:
+                        HomeView()
+                    case .goals:
+                        ProcessView()
+                    case .profile:
+                        ProfileView()
+                    }
+                }
+                .transition(.opacity)
+
+                // Chat overlay panel
+                if showChatPanel {
+                    Color.black.opacity(0.4)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            dismissChat()
                         }
-                        .onEnded { value in
-                            if value.translation.height > 150 {
-                                dismissChat()
-                            } else {
-                                withAnimation(MomentumAnimation.smoothSpring) {
-                                    chatPanelOffset = 0
+                        .transition(.opacity)
+
+                    GlobalAIChatView(isOverlay: true, onDismiss: {
+                        dismissChat()
+                    })
+                    .frame(maxHeight: geometry.size.height * 0.85)
+                    .clipShape(RoundedRectangle(cornerRadius: MomentumRadius.large))
+                    .shadow(color: .black.opacity(0.5), radius: 30, y: -10)
+                    .offset(y: chatPanelOffset)
+                    .gesture(
+                        DragGesture()
+                            .onChanged { value in
+                                if value.translation.height > 0 {
+                                    chatPanelOffset = value.translation.height
                                 }
                             }
-                        }
-                )
-                .transition(.move(edge: .bottom))
-            }
-
-            // Floating Navigation Bar + AI Button (bottom)
-            if !showChatPanel {
-                VStack {
-                    Spacer()
-                    HStack(spacing: 12) {
-                        FloatingTabBar()
-                        FloatingAIButton()
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 16)
+                            .onEnded { value in
+                                if value.translation.height > 150 {
+                                    dismissChat()
+                                } else {
+                                    withAnimation(MomentumAnimation.smoothSpring) {
+                                        chatPanelOffset = 0
+                                    }
+                                }
+                            }
+                    )
+                    .transition(.move(edge: .bottom))
                 }
+
+                // Floating Navigation Bar + AI Button (bottom)
+                if !showChatPanel {
+                    VStack {
+                        Spacer()
+                        HStack(spacing: 12) {
+                            FloatingTabBar()
+                            FloatingAIButton()
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 16)
+                    }
+                }
+            }
+            .onAppear {
+                screenHeight = geometry.size.height
+                chatPanelOffset = screenHeight
             }
         }
         .preferredColorScheme(.dark)
@@ -100,7 +107,7 @@ struct MainTabView: View {
 
     private func dismissChat() {
         withAnimation(MomentumAnimation.smoothSpring) {
-            chatPanelOffset = UIScreen.main.bounds.height
+            chatPanelOffset = screenHeight
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
             showChatPanel = false

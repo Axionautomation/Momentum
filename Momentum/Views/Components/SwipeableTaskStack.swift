@@ -85,28 +85,25 @@ struct SwipeableTaskStack: View {
 #Preview {
     let sampleTasks = [
         MomentumTask(
-            weeklyMilestoneId: UUID(),
+            milestoneId: UUID(),
             goalId: UUID(),
             title: "Research competitor landing pages",
             taskDescription: "Look at 5-10 competitor sites",
-            difficulty: .medium,
-            estimatedMinutes: 30,
+            totalEstimatedMinutes: 30,
             scheduledDate: Date()
         ),
         MomentumTask(
-            weeklyMilestoneId: UUID(),
+            milestoneId: UUID(),
             goalId: UUID(),
             title: "Quick email check",
-            difficulty: .easy,
-            estimatedMinutes: 10,
+            totalEstimatedMinutes: 10,
             scheduledDate: Date()
         ),
         MomentumTask(
-            weeklyMilestoneId: UUID(),
+            milestoneId: UUID(),
             goalId: UUID(),
             title: "Complete marketing strategy",
-            difficulty: .hard,
-            estimatedMinutes: 60,
+            totalEstimatedMinutes: 60,
             scheduledDate: Date()
         )
     ]
