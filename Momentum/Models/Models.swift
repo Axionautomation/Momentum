@@ -842,6 +842,48 @@ struct BrainstormNote: Identifiable, Codable, Equatable {
     }
 }
 
+// MARK: - Briefing Report (Morning briefing data)
+
+struct BriefingReport: Identifiable, Codable {
+    let id: UUID
+    let generatedAt: Date
+    let greeting: String
+    let insight: String
+    let focusArea: String
+    let tasksToday: Int
+    let tasksCompletedYesterday: Int
+    let currentStreak: Int
+    let milestoneProgress: Double
+    let milestoneName: String?
+    let goalDomain: GoalDomain?
+
+    init(
+        id: UUID = UUID(),
+        generatedAt: Date = Date(),
+        greeting: String,
+        insight: String,
+        focusArea: String,
+        tasksToday: Int = 0,
+        tasksCompletedYesterday: Int = 0,
+        currentStreak: Int = 0,
+        milestoneProgress: Double = 0,
+        milestoneName: String? = nil,
+        goalDomain: GoalDomain? = nil
+    ) {
+        self.id = id
+        self.generatedAt = generatedAt
+        self.greeting = greeting
+        self.insight = insight
+        self.focusArea = focusArea
+        self.tasksToday = tasksToday
+        self.tasksCompletedYesterday = tasksCompletedYesterday
+        self.currentStreak = currentStreak
+        self.milestoneProgress = milestoneProgress
+        self.milestoneName = milestoneName
+        self.goalDomain = goalDomain
+    }
+}
+
 // MARK: - AI Work Items (for background processing)
 
 struct AIWorkItem: Identifiable, Codable {

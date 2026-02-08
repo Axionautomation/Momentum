@@ -40,6 +40,9 @@ class AppState: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
 
+    // Briefing Engine
+    @Published var briefingEngine = BriefingEngine()
+
     // AI Service
     private let groqService = GroqService.shared
     private var cancellables = Set<AnyCancellable>()
@@ -126,6 +129,10 @@ class AppState: ObservableObject {
 
     var currentMilestoneProgress: Double {
         currentMilestone?.completionPercentage ?? 0
+    }
+
+    var currentBriefing: BriefingReport? {
+        briefingEngine.currentBriefing
     }
 
     /// Weekly points earned (calculated from completed tasks)
@@ -451,6 +458,25 @@ class AppState: ObservableObject {
         }
 
         isEvaluatingTasks = false
+
+        // Trigger briefing generation after evaluation
+        await briefingEngine.generateBriefingIfNeeded(
+            goal: activeGoal,
+            tasks: currentMilestone?.tasks ?? [],
+            streak: streakCount,
+            milestone: currentMilestone,
+            personality: currentUser?.aiPersonality ?? .energetic
+        )
+    }
+
+    func refreshBriefing() async {
+        await briefingEngine.forceRefreshBriefing(
+            goal: activeGoal,
+            tasks: currentMilestone?.tasks ?? [],
+            streak: streakCount,
+            milestone: currentMilestone,
+            personality: currentUser?.aiPersonality ?? .energetic
+        )
     }
 
     private func updateTaskEvaluation(taskId: UUID, evaluation: TaskAIEvaluation) {

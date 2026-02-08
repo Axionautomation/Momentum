@@ -57,13 +57,38 @@ struct HomeView: View {
             } else {
                 ScrollView {
                     VStack(spacing: MomentumSpacing.section) {
-                        // Header
-                        HomeHeaderView(
-                            streakCount: appState.streakCount,
-                            milestoneProgress: appState.currentMilestoneProgress
+                        // Briefing Hero or fallback header
+                        if let briefing = appState.currentBriefing {
+                            BriefingHeroCard(
+                                briefing: briefing,
+                                isGenerating: appState.briefingEngine.isGenerating,
+                                onRefresh: {
+                                    Task { await appState.refreshBriefing() }
+                                }
+                            )
+                            .padding(.horizontal, MomentumSpacing.comfortable)
+                            .padding(.top, MomentumSpacing.standard)
+                        } else if appState.briefingEngine.isGenerating {
+                            BriefingShimmerCard()
+                                .padding(.horizontal, MomentumSpacing.comfortable)
+                                .padding(.top, MomentumSpacing.standard)
+                        } else {
+                            HomeHeaderView(
+                                streakCount: appState.streakCount,
+                                milestoneProgress: appState.currentMilestoneProgress
+                            )
+                            .padding(.horizontal, MomentumSpacing.comfortable)
+                            .padding(.top, MomentumSpacing.standard)
+                        }
+
+                        // Quick Actions
+                        QuickActionsRow(
+                            onAskAI: { appState.openGlobalChat() },
+                            onRefreshBriefing: {
+                                Task { await appState.refreshBriefing() }
+                            }
                         )
                         .padding(.horizontal, MomentumSpacing.comfortable)
-                        .padding(.top, MomentumSpacing.standard)
 
                         // AI Feed Section (if there are items)
                         if !appState.aiFeedItems.isEmpty {
@@ -225,7 +250,7 @@ struct AIFeedSection: View {
             HStack(spacing: 6) {
                 Ph.sparkle.fill
                     .frame(width: 16, height: 16)
-                Text("AI Assistant")
+                Text("AI Activity")
                     .font(MomentumFont.bodyMedium())
             }
             .foregroundColor(.momentumViolet)
@@ -926,6 +951,297 @@ struct HomeHeaderView: View {
                 .background(Color.momentumCoral.opacity(0.15))
                 .cornerRadius(12)
             }
+        }
+    }
+}
+
+// MARK: - Briefing Hero Card
+
+struct BriefingHeroCard: View {
+    let briefing: BriefingReport
+    let isGenerating: Bool
+    let onRefresh: () -> Void
+
+    private var accentColor: Color {
+        briefing.goalDomain?.color ?? .momentumBlue
+    }
+
+    private var dateString: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE, MMMM d"
+        return formatter.string(from: Date())
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: MomentumSpacing.standard) {
+            // Gradient accent edge
+            RoundedRectangle(cornerRadius: 2)
+                .fill(
+                    LinearGradient(
+                        colors: [accentColor, accentColor.opacity(0.4)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(height: 3)
+                .padding(.horizontal, MomentumSpacing.standard)
+
+            // Greeting + refresh
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: MomentumSpacing.micro) {
+                    Text(briefing.greeting)
+                        .font(MomentumFont.headingLarge())
+                        .foregroundColor(.momentumTextPrimary)
+
+                    Text(dateString)
+                        .font(MomentumFont.body())
+                        .foregroundColor(.momentumTextSecondary)
+                }
+
+                Spacer()
+
+                Button {
+                    onRefresh()
+                } label: {
+                    Ph.arrowClockwise.regular
+                        .frame(width: 18, height: 18)
+                        .foregroundColor(.momentumTextTertiary)
+                        .rotationEffect(.degrees(isGenerating ? 360 : 0))
+                        .animation(
+                            isGenerating ? .linear(duration: 1).repeatForever(autoreverses: false) : .default,
+                            value: isGenerating
+                        )
+                }
+            }
+            .padding(.horizontal, MomentumSpacing.standard)
+
+            // AI Insight
+            HStack(alignment: .top, spacing: MomentumSpacing.compact) {
+                Ph.sparkle.fill
+                    .frame(width: 16, height: 16)
+                    .foregroundColor(accentColor)
+                    .padding(.top, 2)
+
+                Text(briefing.insight)
+                    .font(MomentumFont.body())
+                    .foregroundColor(.momentumTextSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, MomentumSpacing.standard)
+
+            // Focus area pill
+            HStack(spacing: 6) {
+                Ph.crosshair.regular
+                    .frame(width: 14, height: 14)
+                Text(briefing.focusArea)
+                    .font(MomentumFont.label())
+            }
+            .foregroundColor(accentColor)
+            .padding(.horizontal, MomentumSpacing.compact)
+            .padding(.vertical, MomentumSpacing.tight)
+            .background(accentColor.opacity(0.1))
+            .cornerRadius(MomentumRadius.small)
+            .padding(.horizontal, MomentumSpacing.standard)
+
+            // Stats row
+            HStack(spacing: MomentumSpacing.comfortable) {
+                // Streak
+                if briefing.currentStreak > 0 {
+                    HStack(spacing: 4) {
+                        Ph.flame.fill
+                            .frame(width: 16, height: 16)
+                        Text("\(briefing.currentStreak)")
+                            .font(MomentumFont.bodyMedium())
+                    }
+                    .foregroundColor(.momentumCoral)
+                }
+
+                // Tasks today
+                HStack(spacing: 4) {
+                    Ph.listChecks.regular
+                        .frame(width: 16, height: 16)
+                    Text("\(briefing.tasksToday) today")
+                        .font(MomentumFont.label())
+                }
+                .foregroundColor(.momentumTextSecondary)
+
+                // Milestone progress mini ring
+                if let name = briefing.milestoneName {
+                    HStack(spacing: 6) {
+                        MiniProgressRing(
+                            progress: briefing.milestoneProgress / 100,
+                            color: accentColor,
+                            size: 18
+                        )
+                        Text(name)
+                            .font(MomentumFont.caption())
+                            .foregroundColor(.momentumTextTertiary)
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer()
+            }
+            .padding(.horizontal, MomentumSpacing.standard)
+            .padding(.bottom, MomentumSpacing.compact)
+        }
+        .padding(.vertical, MomentumSpacing.compact)
+        .background(Color.momentumCardBackground)
+        .cornerRadius(MomentumRadius.medium)
+        .overlay(
+            RoundedRectangle(cornerRadius: MomentumRadius.medium)
+                .stroke(Color.momentumCardBorder, lineWidth: 1)
+        )
+    }
+}
+
+// MARK: - Mini Progress Ring
+
+struct MiniProgressRing: View {
+    let progress: Double
+    let color: Color
+    let size: CGFloat
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(color.opacity(0.2), lineWidth: 2.5)
+
+            Circle()
+                .trim(from: 0, to: min(progress, 1.0))
+                .stroke(color, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+        }
+        .frame(width: size, height: size)
+    }
+}
+
+// MARK: - Briefing Shimmer Card
+
+struct BriefingShimmerCard: View {
+    @State private var shimmerOffset: CGFloat = -1
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: MomentumSpacing.standard) {
+            // Accent bar shimmer
+            ShimmerRect(width: .infinity, height: 3)
+                .padding(.horizontal, MomentumSpacing.standard)
+
+            // Greeting shimmer
+            VStack(alignment: .leading, spacing: MomentumSpacing.tight) {
+                ShimmerRect(width: 180, height: 28)
+                ShimmerRect(width: 140, height: 17)
+            }
+            .padding(.horizontal, MomentumSpacing.standard)
+
+            // Insight shimmer
+            VStack(alignment: .leading, spacing: MomentumSpacing.tight) {
+                ShimmerRect(width: .infinity, height: 17)
+                ShimmerRect(width: 220, height: 17)
+            }
+            .padding(.horizontal, MomentumSpacing.standard)
+
+            // Focus pill shimmer
+            ShimmerRect(width: 160, height: 28)
+                .padding(.horizontal, MomentumSpacing.standard)
+
+            // Stats shimmer
+            HStack(spacing: MomentumSpacing.comfortable) {
+                ShimmerRect(width: 50, height: 20)
+                ShimmerRect(width: 70, height: 20)
+                ShimmerRect(width: 100, height: 20)
+            }
+            .padding(.horizontal, MomentumSpacing.standard)
+            .padding(.bottom, MomentumSpacing.compact)
+        }
+        .padding(.vertical, MomentumSpacing.compact)
+        .background(Color.momentumCardBackground)
+        .cornerRadius(MomentumRadius.medium)
+        .overlay(
+            RoundedRectangle(cornerRadius: MomentumRadius.medium)
+                .stroke(Color.momentumCardBorder, lineWidth: 1)
+        )
+    }
+}
+
+struct ShimmerRect: View {
+    let width: CGFloat
+    let height: CGFloat
+
+    @State private var phase: CGFloat = 0
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 4)
+            .fill(Color.momentumTextTertiary.opacity(0.15))
+            .frame(maxWidth: width == .infinity ? .infinity : width, maxHeight: height)
+            .frame(height: height)
+            .overlay(
+                GeometryReader { geo in
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    .clear,
+                                    Color.momentumTextTertiary.opacity(0.1),
+                                    .clear
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .offset(x: -geo.size.width + (phase * geo.size.width * 2))
+                }
+                .clipped()
+            )
+            .onAppear {
+                withAnimation(.linear(duration: 1.5).repeatForever(autoreverses: false)) {
+                    phase = 1
+                }
+            }
+    }
+}
+
+// MARK: - Quick Actions Row
+
+struct QuickActionsRow: View {
+    let onAskAI: () -> Void
+    let onRefreshBriefing: () -> Void
+
+    var body: some View {
+        HStack(spacing: MomentumSpacing.compact) {
+            Button {
+                onAskAI()
+            } label: {
+                HStack(spacing: 6) {
+                    Ph.chatCircleDots.regular
+                        .frame(width: 16, height: 16)
+                    Text("Ask AI")
+                        .font(MomentumFont.label())
+                }
+                .foregroundColor(.momentumBlue)
+                .padding(.horizontal, MomentumSpacing.standard)
+                .padding(.vertical, MomentumSpacing.compact)
+                .background(Color.momentumBlue.opacity(0.1))
+                .cornerRadius(MomentumRadius.small)
+            }
+
+            Button {
+                onRefreshBriefing()
+            } label: {
+                HStack(spacing: 6) {
+                    Ph.arrowClockwise.regular
+                        .frame(width: 16, height: 16)
+                    Text("Refresh Briefing")
+                        .font(MomentumFont.label())
+                }
+                .foregroundColor(.momentumViolet)
+                .padding(.horizontal, MomentumSpacing.standard)
+                .padding(.vertical, MomentumSpacing.compact)
+                .background(Color.momentumViolet.opacity(0.1))
+                .cornerRadius(MomentumRadius.small)
+            }
+
+            Spacer()
         }
     }
 }

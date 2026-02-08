@@ -1067,6 +1067,85 @@ class GroqService: ObservableObject {
         )
     }
 
+    // MARK: - Morning Briefing Generation
+
+    struct BriefingContent: Codable {
+        let insight: String
+        let focusArea: String
+
+        enum CodingKeys: String, CodingKey {
+            case insight
+            case focusArea = "focus_area"
+        }
+    }
+
+    func generateMorningBriefing(
+        goalVision: String,
+        milestoneName: String,
+        milestoneProgress: Double,
+        todayTaskTitles: [String],
+        yesterdayCompletedCount: Int,
+        streakCount: Int,
+        personality: AIPersonality
+    ) async throws -> BriefingContent {
+        let personalityStyle: String
+        switch personality {
+        case .energetic:
+            personalityStyle = "energetic and enthusiastic"
+        case .calm:
+            personalityStyle = "calm and thoughtful"
+        case .direct:
+            personalityStyle = "direct and concise"
+        case .motivational:
+            personalityStyle = "inspiring and motivational"
+        }
+
+        let systemPrompt = """
+        You are Momentum's AI coworker generating a morning briefing. Your tone is \(personalityStyle).
+
+        Generate TWO things:
+        1. "insight" — A personalized 1-2 sentence observation about the user's progress, momentum, or a strategic tip for today. Reference their specific goal or milestone when possible. Be specific, not generic.
+        2. "focus_area" — A short phrase (3-8 words) recommending what to focus on today based on their tasks and progress.
+
+        Return ONLY valid JSON:
+        {
+          "insight": "Your insight here",
+          "focus_area": "Your focus recommendation"
+        }
+        """
+
+        let taskList = todayTaskTitles.isEmpty ? "No tasks scheduled yet" : todayTaskTitles.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
+
+        let userPrompt = """
+        Goal: \(goalVision)
+        Current Milestone: \(milestoneName) (\(Int(milestoneProgress))% complete)
+        Today's Tasks:
+        \(taskList)
+        Yesterday: \(yesterdayCompletedCount) tasks completed
+        Current Streak: \(streakCount) days
+
+        Generate the morning briefing.
+        """
+
+        let responseText = try await makeRequest(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            temperature: 0.8,
+            maxTokens: 200,
+            requireJSON: true
+        )
+
+        guard let data = responseText.data(using: .utf8) else {
+            throw GroqError.decodingError("Could not convert briefing response to data")
+        }
+
+        do {
+            return try JSONDecoder().decode(BriefingContent.self, from: data)
+        } catch {
+            throw GroqError.decodingError("Failed to decode briefing: \(error.localizedDescription)")
+        }
+    }
+
     // MARK: - Enhanced AI Companion Methods
 
     /// Analyze user message intent to determine if it's a research request, help question, or brainstorming
