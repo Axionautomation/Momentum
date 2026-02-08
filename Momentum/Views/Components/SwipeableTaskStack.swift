@@ -119,4 +119,5 @@ struct SwipeableTaskStack: View {
     )
     .padding()
     .background(Color.momentumBackgroundSecondary)
+    .preferredColorScheme(.dark)
 }

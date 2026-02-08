@@ -51,17 +51,12 @@ struct TodayView: View {
 
     // MARK: - Computed Properties
 
-    private var currentMilestone: WeeklyMilestone? {
-        guard let projectGoal = appState.activeProjectGoal,
-              let currentPowerGoal = projectGoal.powerGoals.first(where: { $0.status == .active }),
-              let milestone = currentPowerGoal.weeklyMilestones.first(where: { $0.status == .inProgress }) else {
-            return nil
-        }
-        return milestone
+    private var currentMilestone: Milestone? {
+        appState.currentMilestone
     }
 
     private var currentGoalName: String {
-        appState.activeProjectGoal?.visionRefined ?? appState.activeProjectGoal?.visionText ?? "Your Goal"
+        appState.activeGoal?.visionRefined ?? appState.activeGoal?.visionText ?? "Your Goal"
     }
 }
 
@@ -210,15 +205,11 @@ struct WeeklyProgressCard: View {
 // MARK: - Milestone Overview Card
 
 struct MilestoneOverviewCard: View {
-    let milestone: WeeklyMilestone
+    let milestone: Milestone
     @EnvironmentObject var appState: AppState
 
-    private var currentPowerGoalTitle: String {
-        guard let projectGoal = appState.activeProjectGoal,
-              let currentPowerGoal = projectGoal.powerGoals.first(where: { $0.status == .active }) else {
-            return ""
-        }
-        return currentPowerGoal.title
+    private var currentGoalTitle: String {
+        appState.activeGoal?.visionRefined ?? appState.activeGoal?.visionText ?? ""
     }
 
     var body: some View {
@@ -228,13 +219,13 @@ struct MilestoneOverviewCard: View {
                     .foregroundColor(.momentumBlue)
                     .frame(width: 20, height: 20)
 
-                Text("This Week")
+                Text("Current Milestone")
                     .font(MomentumFont.label())
                     .foregroundColor(.momentumTextSecondary)
 
                 Spacer()
 
-                Text("Week \(milestone.weekNumber)")
+                Text("Phase \(milestone.sequenceNumber)")
                     .font(MomentumFont.caption())
                     .foregroundColor(.momentumTextTertiary)
                     .padding(.horizontal, MomentumSpacing.tight)
@@ -243,15 +234,17 @@ struct MilestoneOverviewCard: View {
                     .clipShape(Capsule())
             }
 
-            Text(currentPowerGoalTitle)
+            Text(milestone.title)
                 .font(MomentumFont.headingMedium(18))
                 .foregroundColor(.momentumTextPrimary)
                 .lineLimit(2)
 
-            Text(milestone.milestoneText)
-                .font(MomentumFont.body(15))
-                .foregroundColor(.momentumTextSecondary)
-                .lineLimit(3)
+            if let description = milestone.description {
+                Text(description)
+                    .font(MomentumFont.body(15))
+                    .foregroundColor(.momentumTextSecondary)
+                    .lineLimit(3)
+            }
         }
         .padding(MomentumSpacing.standard)
         .momentumCard()
@@ -278,7 +271,7 @@ struct TasksSection: View {
                         ForEach(appState.todaysTasks) { task in
                             TaskCardView(
                                 task: task,
-                                goalName: appState.activeProjectGoal?.visionRefined ?? "Project Goal",
+                                goalName: appState.activeGoal?.visionRefined ?? "Project Goal",
                                 onComplete: {
                                     appState.completeTask(task)
                                 },
@@ -303,7 +296,7 @@ struct TasksSection: View {
         .sheet(item: $selectedTask) { task in
             TaskDetailView(
                 task: task,
-                goalName: appState.activeProjectGoal?.visionRefined ?? "Project Goal",
+                goalName: appState.activeGoal?.visionRefined ?? "Project Goal",
                 onComplete: {
                     appState.completeTask(task)
                     selectedTask = nil
@@ -349,4 +342,5 @@ struct EmptyStateView: View {
 #Preview {
     TodayView()
         .environmentObject(AppState())
+        .preferredColorScheme(.dark)
 }

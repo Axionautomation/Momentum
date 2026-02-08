@@ -58,8 +58,8 @@ struct TaskCardView: View {
 
     private let holdDuration: Double = 1.5
 
-    private let fillColor = Color(red: 0.118, green: 0.161, blue: 0.231) // #1E293B
-    private let completedFillColor = Color(hex: "2563EB") // Blue for completed tasks
+    private let fillColor = Color.momentumBlue
+    private let completedFillColor = Color.momentumBlue
 
     // Whether to show light (white) text - for completed or during hold
     private var showLightText: Bool {
@@ -68,9 +68,9 @@ struct TaskCardView: View {
 
     var body: some View {
         ZStack {
-            // Layer 1: White background
+            // Layer 1: Card background
             Squircle(n: 4)
-                .fill(Color.white)
+                .fill(Color.momentumCardBackground)
 
             // Layer 2: Fill color - blue for completed, dark slate for hold progress
             Squircle(n: 4)
@@ -191,7 +191,7 @@ struct TaskCardView: View {
         .overlay(
             // Subtle border
             Squircle(n: 4)
-                .stroke(Color.black.opacity(0.06), lineWidth: 1)
+                .stroke(Color.white.opacity(0.06), lineWidth: 1)
         )
         .shadow(
             color: Color.black.opacity(0.08),
@@ -321,5 +321,6 @@ struct TaskCardView: View {
     }
     .padding()
     .background(Color.momentumBackgroundSecondary)
+    .preferredColorScheme(.dark)
     .environmentObject(AppState())
 }

@@ -33,7 +33,7 @@ class AppState: ObservableObject {
     @Published var knowledgeBase: [KnowledgeBaseEntry] = []
 
     // UI State
-    @Published var selectedTab: Tab = .home
+    @Published var selectedTab: Tab = .dashboard
     @Published var showTaskCompletionCelebration: Bool = false
     @Published var showAllTasksCompleteCelebration: Bool = false
     @Published var completedTaskMessage: String = ""
@@ -47,16 +47,14 @@ class AppState: ObservableObject {
 
     // MARK: - Tab Enum
     enum Tab: String, CaseIterable {
-        case home = "Home"
-        case process = "Process"
-        case mindset = "Mindset"
+        case dashboard = "Dashboard"
+        case goals = "Goals"
         case profile = "Profile"
 
         var icon: String {
             switch self {
-            case .home: return "house"
-            case .process: return "squares"
-            case .mindset: return "brain"
+            case .dashboard: return "house"
+            case .goals: return "target"
             case .profile: return "user"
             }
         }
@@ -129,6 +127,38 @@ class AppState: ObservableObject {
     var currentMilestoneProgress: Double {
         currentMilestone?.completionPercentage ?? 0
     }
+
+    /// Weekly points earned (calculated from completed tasks)
+    var weeklyPointsEarned: Int {
+        guard let milestone = currentMilestone else { return 0 }
+        let calendar = Calendar.current
+        let weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date())) ?? Date()
+
+        return milestone.tasks
+            .filter { task in
+                guard task.status == .completed,
+                      let completedAt = task.completedAt else { return false }
+                return completedAt >= weekStart
+            }
+            .reduce(0) { $0 + $1.difficulty.points }
+    }
+
+    /// Maximum weekly points possible
+    var weeklyPointsMax: Int {
+        guard let milestone = currentMilestone else { return 30 }
+        let calendar = Calendar.current
+        let weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date())) ?? Date()
+        let weekEnd = calendar.date(byAdding: .day, value: 7, to: weekStart) ?? Date()
+
+        return milestone.tasks
+            .filter { task in
+                task.scheduledDate >= weekStart && task.scheduledDate < weekEnd
+            }
+            .reduce(0) { $0 + $1.difficulty.points }
+    }
+
+    /// AI Task Processor for background AI work
+    lazy var aiProcessor: AITaskProcessor = AITaskProcessor()
 
     // MARK: - State Management
 
@@ -269,6 +299,11 @@ class AppState: ObservableObject {
             migrateToMilestoneSystem()
             defaults.set(4, forKey: StorageKeys.migrationVersion)
         }
+
+        if currentVersion < 5 {
+            migrateToDomainSystem()
+            defaults.set(5, forKey: StorageKeys.migrationVersion)
+        }
     }
 
     private func migrateToMilestoneSystem() {
@@ -277,6 +312,12 @@ class AppState: ObservableObject {
         defaults.removeObject(forKey: "savedProjectGoal")
         defaults.removeObject(forKey: "savedGoal")
         defaults.removeObject(forKey: "savedArchivedGoals")
+    }
+
+    private func migrateToDomainSystem() {
+        print("Running migration to Domain system (v5)")
+        // Existing goals default to .career domain via the Codable default
+        // No data deletion needed — the domain field has a default value
     }
 
     // MARK: - Onboarding
@@ -784,6 +825,65 @@ class AppState: ObservableObject {
         globalChatTaskContext = task
     }
 
+    // MARK: - Compatibility Methods (Legacy support)
+
+    /// Load today's content (placeholder for legacy code)
+    func loadTodaysContent() {
+        // Content is loaded reactively through computed properties
+        // This method exists for backward compatibility
+    }
+
+    /// Load mock data for previews
+    func loadMockData() {
+        let userId = UUID()
+        currentUser = MomentumUser(id: userId, email: "demo@momentum.app")
+
+        let goalId = UUID()
+        let milestoneId = UUID()
+
+        let milestone = Milestone(
+            id: milestoneId,
+            goalId: goalId,
+            sequenceNumber: 1,
+            title: "Getting Started",
+            description: "Foundation tasks to kick off your goal",
+            status: .active,
+            tasks: [
+                MomentumTask(
+                    milestoneId: milestoneId,
+                    goalId: goalId,
+                    title: "Sample Task",
+                    taskDescription: "A sample task for preview",
+                    checklist: [
+                        ChecklistItem(text: "Step 1", estimatedMinutes: 10, orderIndex: 0),
+                        ChecklistItem(text: "Step 2", estimatedMinutes: 15, orderIndex: 1)
+                    ],
+                    outcomeGoal: "Complete the sample task",
+                    totalEstimatedMinutes: 25,
+                    scheduledDate: Date()
+                )
+            ],
+            startedAt: Date()
+        )
+
+        goals = [
+            Goal(
+                id: goalId,
+                userId: userId,
+                visionText: "Sample Goal",
+                visionRefined: "A refined sample goal for preview",
+                milestones: [milestone]
+            )
+        ]
+
+        isOnboarded = true
+    }
+
+    /// Submit an answer to an AI question
+    func submitAIAnswer(questionId: UUID, answer: String) {
+        aiProcessor.submitAnswer(for: questionId, answer: answer)
+    }
+
     // MARK: - Helper Methods
 
     func getGoalName(for task: MomentumTask) -> String {
@@ -825,29 +925,3 @@ class AppState: ObservableObject {
     }
 }
 
-// MARK: - Sound Manager
-
-class SoundManager {
-    static let shared = SoundManager()
-    private init() {}
-
-    func lightHaptic() {
-        let generator = UIImpactFeedbackGenerator(style: .light)
-        generator.impactOccurred()
-    }
-
-    func mediumHaptic() {
-        let generator = UIImpactFeedbackGenerator(style: .medium)
-        generator.impactOccurred()
-    }
-
-    func successHaptic() {
-        let generator = UINotificationFeedbackGenerator()
-        generator.notificationOccurred(.success)
-    }
-
-    func errorHaptic() {
-        let generator = UINotificationFeedbackGenerator()
-        generator.notificationOccurred(.error)
-    }
-}

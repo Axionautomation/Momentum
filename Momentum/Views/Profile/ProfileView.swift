@@ -91,7 +91,7 @@ struct ProfileView: View {
         guard var user = appState.currentUser else { return }
         user.aiPersonality = personality
         appState.currentUser = user
-        appState.saveUser(user)
+        // User is auto-saved through Combine publisher when currentUser changes
     }
 }
 
@@ -355,4 +355,5 @@ struct AppInfoCard: View {
 #Preview {
     ProfileView()
         .environmentObject(AppState())
+        .preferredColorScheme(.dark)
 }

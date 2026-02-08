@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import SwiftUI
 
 // MARK: - User Preferences
 
@@ -112,6 +113,7 @@ struct Goal: Identifiable, Codable {
     var visionText: String
     var visionRefined: String?
     var goalType: GoalType
+    var domain: GoalDomain
     var status: GoalStatus
     var createdAt: Date
     var targetCompletionDate: Date?
@@ -126,6 +128,7 @@ struct Goal: Identifiable, Codable {
         visionText: String,
         visionRefined: String? = nil,
         goalType: GoalType = .project,
+        domain: GoalDomain = .career,
         status: GoalStatus = .active,
         createdAt: Date = Date(),
         targetCompletionDate: Date? = nil,
@@ -139,6 +142,7 @@ struct Goal: Identifiable, Codable {
         self.visionText = visionText
         self.visionRefined = visionRefined
         self.goalType = goalType
+        self.domain = domain
         self.status = status
         self.createdAt = createdAt
         self.targetCompletionDate = targetCompletionDate
@@ -158,6 +162,31 @@ enum GoalStatus: String, Codable {
 enum GoalType: String, Codable {
     case project      // 12-milestone structured goal
 }
+
+// MARK: - Goal Domain
+
+enum GoalDomain: String, Codable, CaseIterable {
+    case career
+    case finance
+    case growth
+
+    var displayName: String {
+        switch self {
+        case .career: return "Career"
+        case .finance: return "Finance"
+        case .growth: return "Growth"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .career: return .momentumCareer
+        case .finance: return .momentumFinance
+        case .growth: return .momentumGrowth
+        }
+    }
+}
+
 
 // MARK: - Milestone Model (12 per Goal, sequential)
 
@@ -262,6 +291,37 @@ struct MomentumTask: Identifiable, Codable {
 
     var remainingMinutes: Int {
         checklist.filter { !$0.isCompleted }.reduce(0) { $0 + $1.estimatedMinutes }
+    }
+
+    // MARK: - Derived Properties
+
+    /// Difficulty derived from estimated time (for display purposes)
+    var difficulty: TaskDifficulty {
+        if totalEstimatedMinutes <= 15 {
+            return .easy
+        } else if totalEstimatedMinutes <= 45 {
+            return .medium
+        } else {
+            return .hard
+        }
+    }
+
+    /// Alias for totalEstimatedMinutes
+    var estimatedMinutes: Int {
+        totalEstimatedMinutes
+    }
+
+    /// Checklist items as microsteps (for legacy views)
+    var microsteps: [Microstep] {
+        checklist.enumerated().map { index, item in
+            Microstep(
+                id: item.id,
+                taskId: self.id,
+                stepText: item.text,
+                isCompleted: item.isCompleted,
+                orderIndex: index
+            )
+        }
     }
 }
 
@@ -858,6 +918,139 @@ struct AIWorkResult: Codable {
 
 struct WeeklyTasksResponse: Codable {
     let tasks: [GeneratedTaskWithChecklist]
+}
+
+// MARK: - Compatibility Types (Legacy support)
+
+/// Legacy TaskDifficulty for backward compatibility
+enum TaskDifficulty: String, Codable, CaseIterable {
+    case easy
+    case medium
+    case hard
+
+    var displayName: String {
+        switch self {
+        case .easy: return "Easy"
+        case .medium: return "Medium"
+        case .hard: return "Hard"
+        }
+    }
+
+    var emoji: String {
+        switch self {
+        case .easy: return "🟢"
+        case .medium: return "🟡"
+        case .hard: return "🔴"
+        }
+    }
+
+    var points: Int {
+        switch self {
+        case .easy: return 1
+        case .medium: return 3
+        case .hard: return 5
+        }
+    }
+}
+
+/// Legacy Microstep for backward compatibility
+struct Microstep: Identifiable, Codable, Equatable {
+    let id: UUID
+    let taskId: UUID
+    var stepText: String
+    var isCompleted: Bool
+    var orderIndex: Int
+
+    init(
+        id: UUID = UUID(),
+        taskId: UUID,
+        stepText: String,
+        isCompleted: Bool = false,
+        orderIndex: Int = 0
+    ) {
+        self.id = id
+        self.taskId = taskId
+        self.stepText = stepText
+        self.isCompleted = isCompleted
+        self.orderIndex = orderIndex
+    }
+}
+
+/// Time estimate for microsteps
+struct MicrostepTimeEstimate: Codable, Equatable {
+    let microstep: String
+    let estimatedMinutes: Int
+    let rationale: String
+}
+
+/// Enhanced task details from AI
+struct EnhancedTaskDetails: Codable {
+    let difficultyExplanation: String
+    let timeBreakdown: [MicrostepTimeEstimate]
+    let tips: [String]
+}
+
+/// AI Question for gathering user input
+struct AIQuestion: Identifiable, Codable, Equatable {
+    let id: UUID
+    let taskId: UUID?
+    let goalId: UUID
+    let question: String
+    let options: [QuestionOption]
+    let allowsCustomInput: Bool
+    var answer: String?
+    var answeredAt: Date?
+    let createdAt: Date
+    let priority: QuestionPriority
+
+    init(
+        id: UUID = UUID(),
+        taskId: UUID? = nil,
+        goalId: UUID,
+        question: String,
+        options: [QuestionOption] = [],
+        allowsCustomInput: Bool = false,
+        answer: String? = nil,
+        answeredAt: Date? = nil,
+        createdAt: Date = Date(),
+        priority: QuestionPriority = .important
+    ) {
+        self.id = id
+        self.taskId = taskId
+        self.goalId = goalId
+        self.question = question
+        self.options = options
+        self.allowsCustomInput = allowsCustomInput
+        self.answer = answer
+        self.answeredAt = answeredAt
+        self.createdAt = createdAt
+        self.priority = priority
+    }
+}
+
+struct QuestionOption: Identifiable, Codable, Equatable {
+    let id: UUID
+    let label: String
+    let value: String
+
+    init(id: UUID = UUID(), label: String, value: String? = nil) {
+        self.id = id
+        self.label = label
+        self.value = value ?? label
+    }
+}
+
+enum QuestionPriority: String, Codable {
+    case blocking
+    case important
+    case optional
+}
+
+/// AI Task Analysis result
+struct AITaskAnalysis: Codable {
+    let questionsNeeded: [AIQuestion]
+    let researchNeeded: [String]
+    let canProceed: Bool
 }
 
 struct TaskEvaluationResponse: Codable {

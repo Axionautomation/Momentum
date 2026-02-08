@@ -270,4 +270,5 @@ private struct ErrorBubble: View {
         )
         .padding()
     }
+    .preferredColorScheme(.dark)
 }

@@ -13,12 +13,12 @@ struct AIAssistantView: View {
     var body: some View {
         NavigationView {
             ZStack {
-                Color.white
+                Color.momentumBackground
                     .ignoresSafeArea()
 
                 Text("Page Under Construction")
                     .font(.system(size: 17))
-                    .foregroundColor(.gray)
+                    .foregroundColor(.momentumTextSecondary)
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -26,7 +26,7 @@ struct AIAssistantView: View {
                     Button("Done") {
                         dismiss()
                     }
-                    .foregroundColor(.blue)
+                    .foregroundColor(.momentumBlue)
                 }
             }
         }
@@ -35,4 +35,5 @@ struct AIAssistantView: View {
 
 #Preview {
     AIAssistantView()
+        .preferredColorScheme(.dark)
 }

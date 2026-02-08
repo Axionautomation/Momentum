@@ -58,7 +58,7 @@ struct TaskDetailView: View {
                 }
                 .padding(MomentumSpacing.standard)
             }
-            .background(Color.momentumDarkBackground)
+            .background(Color.momentumBackground)
             .navigationTitle(task.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -77,7 +77,7 @@ struct TaskDetailView: View {
                 HoldToCompleteButton(onComplete: onComplete)
                     .padding(.horizontal, MomentumSpacing.standard)
                     .padding(.vertical, MomentumSpacing.compact)
-                    .background(Color.momentumDarkBackground)
+                    .background(Color.momentumBackground)
             }
         }
         .task {
@@ -131,7 +131,7 @@ struct TaskOverviewSection: View {
                     }
                 }
                 .padding(MomentumSpacing.compact)
-                .background(Color.momentumSurfacePrimary)
+                .background(Color.momentumBackgroundSecondary)
                 .clipShape(RoundedRectangle(cornerRadius: MomentumRadius.small))
 
                 // Goal context
@@ -150,14 +150,14 @@ struct TaskOverviewSection: View {
                     }
                 }
                 .padding(MomentumSpacing.compact)
-                .background(Color.momentumSurfacePrimary)
+                .background(Color.momentumBackgroundSecondary)
                 .clipShape(RoundedRectangle(cornerRadius: MomentumRadius.small))
 
                 Spacer()
             }
         }
         .padding(MomentumSpacing.standard)
-        .background(Color.momentumSurfacePrimary)
+        .background(Color.momentumBackgroundSecondary)
         .clipShape(RoundedRectangle(cornerRadius: MomentumRadius.medium))
     }
 }
@@ -205,7 +205,7 @@ struct DifficultyExplanationSection: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(MomentumSpacing.standard)
-        .background(Color.momentumSurfacePrimary)
+        .background(Color.momentumBackgroundSecondary)
         .clipShape(RoundedRectangle(cornerRadius: MomentumRadius.medium))
     }
 }
@@ -253,7 +253,7 @@ struct MicrostepsSection: View {
             }
         }
         .padding(MomentumSpacing.standard)
-        .background(Color.momentumSurfacePrimary)
+        .background(Color.momentumBackgroundSecondary)
         .clipShape(RoundedRectangle(cornerRadius: MomentumRadius.medium))
     }
 }
@@ -331,7 +331,7 @@ struct TimeBreakdownSection: View {
             }
         }
         .padding(MomentumSpacing.standard)
-        .background(Color.momentumSurfacePrimary)
+        .background(Color.momentumBackgroundSecondary)
         .clipShape(RoundedRectangle(cornerRadius: MomentumRadius.medium))
     }
 }
@@ -369,7 +369,7 @@ struct TipsSection: View {
             }
         }
         .padding(MomentumSpacing.standard)
-        .background(Color.momentumSurfacePrimary)
+        .background(Color.momentumBackgroundSecondary)
         .clipShape(RoundedRectangle(cornerRadius: MomentumRadius.medium))
     }
 }
@@ -422,7 +422,7 @@ struct NotesSection: View {
             }
         }
         .padding(MomentumSpacing.standard)
-        .background(Color.momentumSurfacePrimary)
+        .background(Color.momentumBackgroundSecondary)
         .clipShape(RoundedRectangle(cornerRadius: MomentumRadius.medium))
     }
 }
@@ -443,7 +443,7 @@ struct LoadingSection: View {
         }
         .frame(maxWidth: .infinity)
         .padding(MomentumSpacing.large)
-        .background(Color.momentumSurfacePrimary)
+        .background(Color.momentumBackgroundSecondary)
         .clipShape(RoundedRectangle(cornerRadius: MomentumRadius.medium))
     }
 }
@@ -561,4 +561,5 @@ struct HoldToCompleteButton: View {
         onDismiss: {}
     )
     .environmentObject(AppState())
+    .preferredColorScheme(.dark)
 }

@@ -19,7 +19,7 @@ struct TaskExpandedView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            Color.white
+            Color.momentumBackground
                 .ignoresSafeArea()
 
             ScrollView {
@@ -355,7 +355,7 @@ struct TaskExpandedView: View {
         VStack(spacing: 0) {
             // Fade gradient above button
             LinearGradient(
-                colors: [Color.white.opacity(0), Color.white],
+                colors: [Color.momentumBackground.opacity(0), Color.momentumBackground],
                 startPoint: .top,
                 endPoint: .bottom
             )
@@ -385,7 +385,7 @@ struct TaskExpandedView: View {
                 }
                 .padding(.horizontal, MomentumSpacing.comfortable)
                 .padding(.bottom, MomentumSpacing.section)
-                .background(Color.white)
+                .background(Color.momentumBackground)
             } else {
                 Button {
                     onComplete()
@@ -405,7 +405,7 @@ struct TaskExpandedView: View {
                 }
                 .padding(.horizontal, MomentumSpacing.comfortable)
                 .padding(.bottom, MomentumSpacing.section)
-                .background(Color.white)
+                .background(Color.momentumBackground)
             }
         }
     }

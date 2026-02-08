@@ -16,9 +16,14 @@ struct FloatingAIButton: View {
             appState.openGlobalChat()
         } label: {
             ZStack {
-                // Main button - square with rounded corners and blue color
                 RoundedRectangle(cornerRadius: 20)
-                    .fill(Color.momentumBlue)
+                    .fill(
+                        LinearGradient(
+                            colors: [.momentumBlue, .momentumBlueLight],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
                     .frame(width: 56, height: 56)
                     .shadow(color: Color.momentumBlue.opacity(0.4), radius: 15, y: 8)
 
@@ -33,7 +38,7 @@ struct FloatingAIButton: View {
 
 #Preview {
     ZStack {
-        Color.white.ignoresSafeArea()
+        Color.momentumBackground.ignoresSafeArea()
 
         VStack {
             Spacer()
@@ -46,4 +51,5 @@ struct FloatingAIButton: View {
         }
     }
     .environmentObject(AppState())
+    .preferredColorScheme(.dark)
 }

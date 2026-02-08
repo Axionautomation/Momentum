@@ -10,47 +10,101 @@ import PhosphorSwift
 
 struct MainTabView: View {
     @EnvironmentObject var appState: AppState
+    @State private var chatPanelOffset: CGFloat = UIScreen.main.bounds.height
+    @State private var showChatPanel: Bool = false
 
     var body: some View {
         ZStack {
-            // White background
+            // Dark background
             Color.momentumBackground
                 .ignoresSafeArea()
 
             // Current view based on selection
             Group {
                 switch appState.selectedTab {
-                case .home:
+                case .dashboard:
                     HomeView()
-                case .process:
+                case .goals:
                     ProcessView()
-                case .mindset:
-                    MindsetView()
                 case .profile:
                     ProfileView()
                 }
             }
             .transition(.opacity)
 
-            // Floating Navigation Bar + AI Button (bottom)
-            VStack {
-                Spacer()
-                HStack(spacing: 12) {
-                    // Custom Floating Tab Bar
-                    FloatingTabBar()
+            // Chat overlay panel
+            if showChatPanel {
+                Color.black.opacity(0.4)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        dismissChat()
+                    }
+                    .transition(.opacity)
 
-                    // Floating AI Button
-                    FloatingAIButton()
-                }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 0)
+                GlobalAIChatView(isOverlay: true, onDismiss: {
+                    dismissChat()
+                })
+                .frame(maxHeight: UIScreen.main.bounds.height * 0.85)
+                .clipShape(RoundedRectangle(cornerRadius: MomentumRadius.large))
+                .shadow(color: .black.opacity(0.5), radius: 30, y: -10)
+                .offset(y: chatPanelOffset)
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            if value.translation.height > 0 {
+                                chatPanelOffset = value.translation.height
+                            }
+                        }
+                        .onEnded { value in
+                            if value.translation.height > 150 {
+                                dismissChat()
+                            } else {
+                                withAnimation(MomentumAnimation.smoothSpring) {
+                                    chatPanelOffset = 0
+                                }
+                            }
+                        }
+                )
+                .transition(.move(edge: .bottom))
             }
-            .ignoresSafeArea(.keyboard)
+
+            // Floating Navigation Bar + AI Button (bottom)
+            if !showChatPanel {
+                VStack {
+                    Spacer()
+                    HStack(spacing: 12) {
+                        FloatingTabBar()
+                        FloatingAIButton()
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 16)
+                }
+            }
         }
-        .sheet(isPresented: $appState.showGlobalChat) {
-            GlobalAIChatView()
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
+        .preferredColorScheme(.dark)
+        .onChange(of: appState.showGlobalChat) { _, show in
+            if show {
+                presentChat()
+            } else {
+                dismissChat()
+            }
+        }
+    }
+
+    private func presentChat() {
+        showChatPanel = true
+        withAnimation(MomentumAnimation.smoothSpring) {
+            chatPanelOffset = 0
+        }
+    }
+
+    private func dismissChat() {
+        withAnimation(MomentumAnimation.smoothSpring) {
+            chatPanelOffset = UIScreen.main.bounds.height
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            showChatPanel = false
+            appState.showGlobalChat = false
         }
     }
 }
@@ -66,46 +120,58 @@ struct FloatingTabBar: View {
                 tabButton(for: tab)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(Color(hex: "1E293B"))
-        .clipShape(RoundedRectangle(cornerRadius: 28))
-        .shadow(color: .black.opacity(0.3), radius: 20, y: 10)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 28)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 28)
+                        .fill(Color.white.opacity(0.05))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 28)
+                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
+                )
+        )
+        .shadow(color: .black.opacity(0.4), radius: 20, y: 10)
     }
 
     private func tabButton(for tab: AppState.Tab) -> some View {
         Button {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+            withAnimation(MomentumAnimation.snappy) {
                 appState.selectedTab = tab
             }
         } label: {
             VStack(spacing: 3) {
                 tabIcon(for: tab)
-                    .color(appState.selectedTab == tab ? .white : Color(hex: "64748B"))
-                    .frame(width: 18, height: 18)
+                    .color(appState.selectedTab == tab ? .white : Color.momentumTextTertiary)
+                    .frame(width: 20, height: 20)
 
                 Text(tab.rawValue)
-                    .font(.system(size: 9, weight: .medium, design: .rounded))
-                    .foregroundColor(appState.selectedTab == tab ? .white : Color(hex: "64748B"))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(appState.selectedTab == tab ? .white : Color.momentumTextTertiary)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 6)
+            .background(
+                appState.selectedTab == tab
+                    ? Color.white.opacity(0.1)
+                    : Color.clear
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 16))
         }
         .buttonStyle(.plain)
     }
 
     private func tabIcon(for tab: AppState.Tab) -> Image {
-        switch tab.icon {
-        case "house":
+        switch tab {
+        case .dashboard:
             return Ph.house.bold
-        case "squares":
-            return Ph.squaresFour.bold
-        case "brain":
-            return Ph.brain.bold
-        case "user":
+        case .goals:
+            return Ph.target.bold
+        case .profile:
             return Ph.user.bold
-        default:
-            return Ph.house.bold
         }
     }
 }

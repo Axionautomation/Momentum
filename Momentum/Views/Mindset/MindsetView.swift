@@ -54,7 +54,7 @@ struct MindsetView: View {
                         .opacity(appeared ? 1 : 0)
 
                     // Why You Started Card
-                    if let goal = appState.activeProjectGoal {
+                    if let goal = appState.activeGoal {
                         WhyYouStartedCard(vision: goal.visionRefined ?? goal.visionText)
                             .padding(.horizontal, MomentumSpacing.comfortable)
                             .offset(y: appeared ? 0 : 30)
@@ -207,4 +207,5 @@ struct AffirmationsCard: View {
 #Preview {
     MindsetView()
         .environmentObject(AppState())
+        .preferredColorScheme(.dark)
 }

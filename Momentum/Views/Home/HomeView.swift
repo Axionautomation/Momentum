@@ -933,4 +933,5 @@ struct HomeHeaderView: View {
 #Preview {
     HomeView()
         .environmentObject(AppState())
+        .preferredColorScheme(.dark)
 }

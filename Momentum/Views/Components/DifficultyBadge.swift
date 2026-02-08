@@ -12,7 +12,7 @@ struct DifficultyCornerBadge: View {
 
     var body: some View {
         Circle()
-            .fill(Color.white)
+            .fill(Color.momentumCardBackground)
             .frame(width: 48, height: 48)
             .overlay(
                 difficultyIcon
@@ -95,4 +95,5 @@ struct DifficultyCornerBadge: View {
     }
     .padding()
     .background(Color.momentumBackgroundSecondary)
+    .preferredColorScheme(.dark)
 }

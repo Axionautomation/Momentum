@@ -119,4 +119,5 @@ struct LargeProgressRing: View {
     }
     .padding()
     .background(Color.momentumBackground)
+    .preferredColorScheme(.dark)
 }

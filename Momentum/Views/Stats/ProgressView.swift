@@ -10,16 +10,17 @@ import SwiftUI
 struct MomentumProgressView: View {
     var body: some View {
         ZStack {
-            Color.white
+            Color.momentumBackground
                 .ignoresSafeArea()
 
             Text("Page Under Construction")
                 .font(.system(size: 17))
-                .foregroundColor(.gray)
+                .foregroundColor(.momentumTextSecondary)
         }
     }
 }
 
 #Preview {
     MomentumProgressView()
+        .preferredColorScheme(.dark)
 }

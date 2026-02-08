@@ -14,22 +14,19 @@ struct TaskPickerView: View {
     let onSelect: (MomentumTask) -> Void
 
     var allTasks: [MomentumTask] {
-        guard let goal = appState.activeProjectGoal else { return [] }
-        var tasks: [MomentumTask] = []
+        guard let goal = appState.activeGoal else { return [] }
 
-        for powerGoal in goal.powerGoals where powerGoal.status == .active {
-            for milestone in powerGoal.weeklyMilestones where milestone.status == .inProgress {
-                tasks.append(contentsOf: milestone.tasks)
-            }
-        }
-
-        return tasks.sorted { $0.scheduledDate < $1.scheduledDate }
+        // Get tasks from active milestones
+        return goal.milestones
+            .filter { $0.status == .active }
+            .flatMap { $0.tasks }
+            .sorted { $0.scheduledDate < $1.scheduledDate }
     }
 
     var body: some View {
         NavigationView {
             ZStack {
-                Color.momentumDarkBackground.ignoresSafeArea()
+                Color.momentumBackground.ignoresSafeArea()
 
                 ScrollView {
                     VStack(spacing: 12) {
@@ -139,9 +136,5 @@ struct TaskPickerView: View {
     TaskPickerView { task in
         print("Selected task: \(task.title)")
     }
-    .environmentObject({
-        let state = AppState()
-        state.loadMockData()
-        return state
-    }())
+    .environmentObject(AppState())
 }

@@ -85,12 +85,12 @@ struct ProjectWorkspaceView: View {
                 .foregroundColor(.momentumTextPrimary)
                 .lineLimit(3)
 
-            if let powerGoal = currentPowerGoal {
+            if let milestone = currentMilestone {
                 HStack(spacing: MomentumSpacing.compact) {
                     progressRing
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Phase \(powerGoal.monthNumber): \(powerGoal.title)")
+                        Text("Phase \(milestone.sequenceNumber): \(milestone.title)")
                             .font(MomentumFont.bodyMedium())
                             .foregroundColor(.momentumTextPrimary)
 
@@ -159,31 +159,30 @@ struct ProjectWorkspaceView: View {
         VStack(alignment: .leading, spacing: MomentumSpacing.compact) {
             sectionHeader(icon: Ph.target.fill, title: "Current Focus", count: nil)
 
-            if let powerGoal = currentPowerGoal {
+            if let milestone = currentMilestone {
                 VStack(alignment: .leading, spacing: MomentumSpacing.tight) {
-                    Text(powerGoal.title)
+                    Text(milestone.title)
                         .font(MomentumFont.headingMedium())
                         .foregroundColor(.momentumTextPrimary)
 
-                    if let description = powerGoal.description {
+                    if let description = milestone.description {
                         Text(description)
                             .font(MomentumFont.body())
                             .foregroundColor(.momentumTextSecondary)
                     }
 
-                    // Current milestone
-                    if let milestone = currentMilestone {
-                        HStack(spacing: MomentumSpacing.tight) {
-                            Ph.flag.regular
-                                .frame(width: 16, height: 16)
-                                .foregroundColor(.momentumBlue)
+                    // Tasks progress
+                    HStack(spacing: MomentumSpacing.tight) {
+                        Ph.checkSquare.regular
+                            .frame(width: 16, height: 16)
+                            .foregroundColor(.momentumBlue)
 
-                            Text("Week \(milestone.weekNumber): \(milestone.milestoneText)")
-                                .font(MomentumFont.label())
-                                .foregroundColor(.momentumTextSecondary)
-                        }
-                        .padding(.top, MomentumSpacing.tight)
+                        let completedTasks = milestone.tasks.filter { $0.status == .completed }.count
+                        Text("\(completedTasks)/\(milestone.tasks.count) tasks completed")
+                            .font(MomentumFont.label())
+                            .foregroundColor(.momentumTextSecondary)
                     }
+                    .padding(.top, MomentumSpacing.tight)
                 }
                 .padding(MomentumSpacing.standard)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -200,14 +199,14 @@ struct ProjectWorkspaceView: View {
             sectionHeader(icon: Ph.listNumbers.fill, title: "All Phases", count: nil)
 
             VStack(spacing: 0) {
-                ForEach(Array(project.powerGoals.enumerated()), id: \.element.id) { index, powerGoal in
-                    phaseRow(powerGoal: powerGoal, index: index)
+                ForEach(Array(project.milestones.enumerated()), id: \.element.id) { index, milestone in
+                    phaseRow(milestone: milestone, index: index)
 
-                    if index < project.powerGoals.count - 1 {
+                    if index < project.milestones.count - 1 {
                         // Connector line
                         HStack {
                             Rectangle()
-                                .fill(powerGoal.status == .completed ? Color.momentumSuccess : Color.momentumCardBorder)
+                                .fill(milestone.status == .completed ? Color.momentumSuccess : Color.momentumCardBorder)
                                 .frame(width: 2, height: 20)
                                 .padding(.leading, 15)
 
@@ -219,38 +218,38 @@ struct ProjectWorkspaceView: View {
         }
     }
 
-    private func phaseRow(powerGoal: PowerGoal, index: Int) -> some View {
+    private func phaseRow(milestone: Milestone, index: Int) -> some View {
         HStack(spacing: MomentumSpacing.compact) {
             // Status indicator
             ZStack {
                 Circle()
-                    .fill(phaseStatusColor(powerGoal.status))
+                    .fill(milestoneStatusColor(milestone.status))
                     .frame(width: 32, height: 32)
 
-                if powerGoal.status == .completed {
+                if milestone.status == .completed {
                     Ph.check.bold
                         .frame(width: 14, height: 14)
                         .foregroundColor(.white)
                 } else {
                     Text("\(index + 1)")
                         .font(MomentumFont.label(14))
-                        .foregroundColor(powerGoal.status == .active ? .white : .momentumTextTertiary)
+                        .foregroundColor(milestone.status == .active ? .white : .momentumTextTertiary)
                 }
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(powerGoal.title)
+                Text(milestone.title)
                     .font(MomentumFont.bodyMedium())
-                    .foregroundColor(powerGoal.status == .locked ? .momentumTextTertiary : .momentumTextPrimary)
+                    .foregroundColor(milestone.status == .locked ? .momentumTextTertiary : .momentumTextPrimary)
 
-                Text("Month \(powerGoal.monthNumber)")
+                Text("Phase \(milestone.sequenceNumber)")
                     .font(MomentumFont.caption())
                     .foregroundColor(.momentumTextTertiary)
             }
 
             Spacer()
 
-            if powerGoal.status == .active {
+            if milestone.status == .active {
                 Text("Current")
                     .font(MomentumFont.label(12))
                     .foregroundColor(.momentumBlue)
@@ -263,7 +262,7 @@ struct ProjectWorkspaceView: View {
         .padding(.vertical, MomentumSpacing.tight)
     }
 
-    private func phaseStatusColor(_ status: PowerGoalStatus) -> Color {
+    private func milestoneStatusColor(_ status: MilestoneStatus) -> Color {
         switch status {
         case .completed: return .momentumSuccess
         case .active: return .momentumBlue
@@ -299,12 +298,8 @@ struct ProjectWorkspaceView: View {
 
     // MARK: - Computed Properties
 
-    private var currentPowerGoal: PowerGoal? {
-        project.powerGoals.first(where: { $0.status == .active })
-    }
-
-    private var currentMilestone: WeeklyMilestone? {
-        currentPowerGoal?.weeklyMilestones.first(where: { $0.status == .inProgress })
+    private var currentMilestone: Milestone? {
+        project.milestones.first(where: { $0.status == .active })
     }
 
     private var pendingQuestions: [AIQuestion] {
@@ -333,7 +328,7 @@ struct AIQuestionCard: View {
 
                 Spacer()
 
-                if let taskId = question.taskId {
+                if question.taskId != nil {
                     Text("Related to task")
                         .font(MomentumFont.caption())
                         .foregroundColor(.momentumTextTertiary)
@@ -558,28 +553,29 @@ struct AIReportCard: View {
 }
 
 #Preview {
+    let goalId = UUID()
     let sampleGoal = Goal(
         userId: UUID(),
         visionText: "Launch a successful SaaS product",
         visionRefined: "Build and launch a 6-figure SaaS product in 12 months",
-        powerGoals: [
-            PowerGoal(
-                goalId: UUID(),
-                monthNumber: 1,
+        milestones: [
+            Milestone(
+                goalId: goalId,
+                sequenceNumber: 1,
                 title: "Market Research & Validation",
                 description: "Validate the market need and define target customers",
                 status: .completed
             ),
-            PowerGoal(
-                goalId: UUID(),
-                monthNumber: 2,
+            Milestone(
+                goalId: goalId,
+                sequenceNumber: 2,
                 title: "MVP Development",
                 description: "Build the minimum viable product",
                 status: .active
             ),
-            PowerGoal(
-                goalId: UUID(),
-                monthNumber: 3,
+            Milestone(
+                goalId: goalId,
+                sequenceNumber: 3,
                 title: "Beta Launch",
                 description: "Launch to beta users and gather feedback",
                 status: .locked
@@ -587,8 +583,9 @@ struct AIReportCard: View {
         ]
     )
 
-    return NavigationStack {
+    NavigationStack {
         ProjectWorkspaceView(project: sampleGoal)
             .environmentObject(AppState())
     }
+    .preferredColorScheme(.dark)
 }

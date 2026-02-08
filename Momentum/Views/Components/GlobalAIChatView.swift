@@ -14,6 +14,9 @@ struct GlobalAIChatView: View {
     @StateObject private var viewModel = ChatViewModel()
     @FocusState private var isInputFocused: Bool
 
+    var isOverlay: Bool = false
+    var onDismiss: (() -> Void)? = nil
+
     var body: some View {
         NavigationView {
             ZStack {
@@ -160,7 +163,11 @@ struct GlobalAIChatView: View {
 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") {
-                        dismiss()
+                        if let onDismiss = onDismiss {
+                            onDismiss()
+                        } else {
+                            dismiss()
+                        }
                     }
                     .font(MomentumFont.bodyMedium())
                     .foregroundColor(.momentumBlue)
@@ -168,6 +175,18 @@ struct GlobalAIChatView: View {
             }
             .onAppear {
                 viewModel.taskContext = appState.globalChatTaskContext
+                // Load most recent chat if no messages and no task context
+                if viewModel.messages.isEmpty && appState.globalChatTaskContext == nil {
+                    if let mostRecent = viewModel.savedChats.first {
+                        viewModel.loadChat(mostRecent)
+                    }
+                }
+            }
+            .onDisappear {
+                // Auto-save chat when dismissing if there are messages
+                if !viewModel.messages.isEmpty {
+                    viewModel.saveCurrentChat()
+                }
             }
             .sheet(isPresented: $viewModel.showSavedChats) {
                 SavedChatsListView(viewModel: viewModel)
@@ -626,4 +645,5 @@ struct SavedChatsListView: View {
 #Preview {
     GlobalAIChatView()
         .environmentObject(AppState())
+        .preferredColorScheme(.dark)
 }

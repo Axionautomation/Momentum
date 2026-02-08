@@ -132,8 +132,8 @@ struct CelebrationView: View {
         .momentumBlueLight,
         .momentumSuccess,
         .momentumWarning,
-        Color(hex: "8B5CF6"), // Purple
-        Color(hex: "EC4899")  // Pink
+        .momentumViolet,       // Purple
+        .momentumGrowth        // Pink/Violet
     ]
 }
 
@@ -215,10 +215,12 @@ struct EmptyTasksView: View {
         weeklyMax: 42,
         onDismiss: {}
     )
+    .preferredColorScheme(.dark)
 }
 
 #Preview("Empty State") {
     EmptyTasksView()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.momentumBackgroundSecondary)
+        .preferredColorScheme(.dark)
 }

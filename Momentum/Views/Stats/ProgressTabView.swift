@@ -44,7 +44,7 @@ struct ProgressTabView: View {
                     .opacity(appeared ? 1 : 0)
 
                     // Goal Roadmap
-                    if let goal = appState.activeProjectGoal {
+                    if let goal = appState.activeGoal {
                         GoalRoadmapCard(goal: goal)
                             .padding(.horizontal, MomentumSpacing.comfortable)
                             .offset(y: appeared ? 0 : 30)
@@ -138,8 +138,8 @@ struct WeeklyStatsCard: View {
 struct GoalRoadmapCard: View {
     let goal: Goal
 
-    private var currentMonth: Int {
-        goal.powerGoals.firstIndex(where: { $0.status == .active }) ?? 0
+    private var currentMilestoneIndex: Int {
+        goal.milestones.firstIndex(where: { $0.status == .active }) ?? 0
     }
 
     var body: some View {
@@ -150,7 +150,7 @@ struct GoalRoadmapCard: View {
                     .foregroundColor(.momentumTextPrimary)
                 Spacer()
 
-                Text("Month \(currentMonth + 1) of 12")
+                Text("Phase \(currentMilestoneIndex + 1) of \(goal.milestones.count)")
                     .font(MomentumFont.label())
                     .foregroundColor(.momentumTextSecondary)
             }
@@ -161,15 +161,15 @@ struct GoalRoadmapCard: View {
                 .foregroundColor(.momentumTextSecondary)
                 .lineLimit(2)
 
-            // Power Goals Timeline
+            // Milestones Timeline
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: MomentumSpacing.compact) {
-                    ForEach(Array(goal.powerGoals.enumerated()), id: \.element.id) { index, powerGoal in
-                        PowerGoalNode(
-                            month: index + 1,
-                            title: powerGoal.title,
-                            status: powerGoal.status,
-                            isCurrent: powerGoal.status == .active
+                    ForEach(Array(goal.milestones.enumerated()), id: \.element.id) { index, milestone in
+                        MilestoneNode(
+                            sequence: index + 1,
+                            title: milestone.title,
+                            status: milestone.status,
+                            isCurrent: milestone.status == .active
                         )
                     }
                 }
@@ -181,12 +181,12 @@ struct GoalRoadmapCard: View {
     }
 }
 
-// MARK: - Power Goal Node
+// MARK: - Milestone Node
 
-struct PowerGoalNode: View {
-    let month: Int
+struct MilestoneNode: View {
+    let sequence: Int
     let title: String
-    let status: PowerGoalStatus
+    let status: MilestoneStatus
     let isCurrent: Bool
 
     private var nodeColor: Color {
@@ -214,7 +214,7 @@ struct PowerGoalNode: View {
                         .frame(width: 16, height: 16)
                         .foregroundColor(.white)
                 } else {
-                    Text("\(month)")
+                    Text("\(sequence)")
                         .font(MomentumFont.label())
                         .foregroundColor(.white)
                 }
@@ -263,4 +263,5 @@ struct NoGoalCard: View {
 #Preview {
     ProgressTabView()
         .environmentObject(AppState())
+        .preferredColorScheme(.dark)
 }

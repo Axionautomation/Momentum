@@ -882,7 +882,10 @@ struct QuestionsView: View {
         if question.question.lowercased().contains("experience") {
             answers.experienceLevel = answer
         } else if question.question.lowercased().contains("hours") || question.question.lowercased().contains("time") {
-            answers.weeklyHours = answer
+            // Parse hours from answer (e.g., "5 hours" -> 5)
+            if let hours = Int(answer.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()) {
+                answers.weeklyHours = hours
+            }
         } else if question.question.lowercased().contains("timeline") || question.question.lowercased().contains("when") {
             answers.timeline = answer
         } else if question.question.lowercased().contains("concern") || question.question.lowercased().contains("challenge") {
@@ -900,8 +903,8 @@ struct QuestionsView: View {
         // Load previously saved answer if navigating back
         if question.question.lowercased().contains("experience") && !answers.experienceLevel.isEmpty {
             selectedAnswer = answers.experienceLevel
-        } else if question.question.lowercased().contains("hours") && !answers.weeklyHours.isEmpty {
-            selectedAnswer = answers.weeklyHours
+        } else if question.question.lowercased().contains("hours") && answers.weeklyHours > 0 {
+            selectedAnswer = "\(answers.weeklyHours) hours"
         } else if question.question.lowercased().contains("timeline") && !answers.timeline.isEmpty {
             selectedAnswer = answers.timeline
         } else if question.question.lowercased().contains("concern") && !answers.biggestConcern.isEmpty {
@@ -1077,7 +1080,7 @@ struct PlanPreviewView: View {
                                 .scaledToFit()
                                 .frame(width: 32, height: 32)
                                 .foregroundStyle(LinearGradient(
-                                    colors: [.momentumSuccess, Color(hex: "34D399")],
+                                    colors: [.momentumSuccess, .momentumSuccess.opacity(0.7)],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 ))
@@ -1264,4 +1267,5 @@ struct FlowLayout: Layout {
 #Preview {
     OnboardingView()
         .environmentObject(AppState())
+        .preferredColorScheme(.dark)
 }

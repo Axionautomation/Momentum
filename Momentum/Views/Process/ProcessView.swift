@@ -19,7 +19,7 @@ struct ProcessView: View {
                 headerSection
 
                 // Projects Section
-                if let project = appState.activeProjectGoal {
+                if let project = appState.activeGoal {
                     projectCard(project)
                 } else {
                     emptyState
@@ -202,4 +202,5 @@ struct ProcessView: View {
 #Preview {
     ProcessView()
         .environmentObject(AppState())
+        .preferredColorScheme(.dark)
 }

@@ -1,20 +1,25 @@
 # Momentum
 
-AI-powered goal achievement app that bridges the gap between annual vision and daily action.
+AI coworker for career, finance, and personal growth — the AI is the engine, the user is the pilot.
 
 ## Vision
 
-Momentum combines Dan Martell's structured planning framework with AI assistance to help users achieve their goals through consistent daily progress. Users input their annual vision, and the app generates a structured path: 12 Power Goals → Weekly Milestones → 3 Daily Tasks (Easy/Medium/Hard). The floating AI assistant provides research, guidance, and motivation throughout.
+Momentum is evolving from a goal-tracking app into a proactive AI coworker that researches, drafts, schedules, and executes alongside the user. The AI doesn't wait to be asked — it prepares morning briefings with overnight research, drafts content, schedules focus sessions, and presents actionable recommendations. Users steer; the AI does the heavy lifting.
+
+The core loop: User inputs vision → AI generates 12 milestones → daily tasks with checklists → AI proactively researches, drafts content, and schedules work → morning briefing summarizes progress and next steps.
+
+See `Plan.md` for the full 8-phase transformation roadmap.
 
 ## Tech Stack
 
-- **Platform**: iOS 16+
+- **Platform**: iOS 17+
 - **Language**: Swift 5.9+
 - **UI Framework**: SwiftUI
 - **Architecture**: MVVM with centralized AppState
-- **AI**: Groq API (llama-3.3-70b-versatile)
-- **Persistence**: UserDefaults (JSON Codable)
+- **AI**: Groq API (llama-3.3-70b-versatile) — expanding to multi-model (Groq fast + Claude complex)
+- **Persistence**: UserDefaults (JSON Codable) — migrating to Firebase Firestore
 - **Icons**: PhosphorSwift
+- **Design**: Dark-first, glassmorphic, bold typography
 
 ## Package Dependencies
 
@@ -35,35 +40,44 @@ Ph.target.regular        // Goal icons
 ```
 Momentum/
 ├── Models/
-│   └── Models.swift              # All data models (Goals, Tasks, Users)
+│   └── Models.swift              # All data models (Goals, Milestones, Tasks, GoalDomain)
 ├── ViewModels/
-│   └── AppState.swift            # Centralized state management
+│   └── AppState.swift            # Centralized state management (3-tab navigation)
 ├── Views/
-│   ├── MainTabView.swift         # Root navigation (4 tabs)
+│   ├── MainTabView.swift         # Root navigation (3 tabs: Dashboard, Goals, Profile)
+│   ├── Home/
+│   │   ├── HomeView.swift        # Dashboard / daily view
+│   │   ├── TaskCardView.swift    # Squircle task cards with hold-to-complete
+│   │   ├── TaskExpandedView.swift # Task detail sheet
+│   │   ├── CelebrationView.swift # Task completion celebration
+│   │   └── WeeklyProgressRing.swift # Progress ring component
+│   ├── Process/
+│   │   ├── ProcessView.swift     # Goals overview
+│   │   └── ProjectWorkspaceView.swift # Project detail workspace
 │   ├── Today/
-│   │   └── TodayView.swift       # Daily dashboard
-│   ├── Road/
-│   │   └── JourneyView.swift     # Visual goal map
-│   ├── Goals/
-│   │   └── GoalsView.swift       # Goals detail + notes
-│   ├── Stats/
-│   │   └── ProgressView.swift    # Analytics dashboard
+│   │   └── TodayView.swift       # Today's task view
+│   ├── Mindset/
+│   │   └── MindsetView.swift     # Quotes & affirmations
 │   ├── Profile/
-│   │   └── ProfileView.swift     # Settings
+│   │   └── ProfileView.swift     # Settings & account
 │   ├── Onboarding/
 │   │   └── OnboardingView.swift  # User onboarding flow
 │   └── Components/
-│       ├── FloatingAIButton.swift    # Global AI trigger
-│       ├── GlobalAIChatView.swift    # Full-screen AI chat
+│       ├── FloatingAIButton.swift    # Floating AI chat trigger (gradient)
+│       ├── GlobalAIChatView.swift    # AI chat (overlay panel + modal)
 │       ├── AIAssistantView.swift     # Task-specific help
-│       └── TaskPickerView.swift      # Task selection modal
+│       ├── TaskPickerView.swift      # Task selection modal
+│       ├── TaskDetailView.swift      # Task detail with checklist
+│       ├── SwipeableTaskStack.swift  # Swipeable card stack
+│       ├── DifficultyBadge.swift     # Task difficulty indicator
+│       └── QuizHelpBubble.swift      # Skill assessment quiz
 ├── Services/
-│   ├── GroqService.swift             # AI integration
+│   ├── GroqService.swift             # AI integration (1,600+ lines)
 │   ├── ConversationOrchestrator.swift # Multi-turn conversations
 │   └── MockDataService.swift         # Demo data
 ├── Utilities/
 │   ├── Config.swift              # API keys, app config
-│   └── Theme.swift               # Design system
+│   └── Theme.swift               # Design system (dark-first, glassmorphic)
 └── Assets/                       # Images, colors, app icons
 ```
 
@@ -71,78 +85,128 @@ Momentum/
 
 | File | Purpose |
 |------|---------|
-| `Models.swift` | All data models: MomentumUser, Goal, PowerGoal, WeeklyMilestone, MomentumTask, TaskNotes |
-| `AppState.swift` | @MainActor state container, persistence, task management |
-| `GroqService.swift` | AI API calls: onboarding questions, plan generation, task help, research |
+| `Models.swift` | Data models: MomentumUser, Goal, GoalDomain, Milestone, MomentumTask, ChecklistItem, TaskNotes |
+| `AppState.swift` | @MainActor state container, 3-tab navigation (dashboard/goals/profile), persistence |
+| `GroqService.swift` | AI API calls: onboarding, plan generation, task evaluation, research, chat |
 | `Config.swift` | API keys, base URLs, app version |
-| `Theme.swift` | Colors, typography, gradients, view modifiers |
+| `Theme.swift` | Dark-first design system: colors, glassmorphism, typography, animations, gradients |
+| `MainTabView.swift` | 3-tab FloatingTabBar + persistent chat overlay panel |
 
 ## Data Model Hierarchy
 
 ```
-Goal (1 per type: project, habit, identity)
-├── PowerGoal (12 per project - monthly milestones)
-│   └── WeeklyMilestone (5 per power goal)
-│       └── MomentumTask (3 per day: easy, medium, hard)
-│           ├── Microstep[] (AI-generated sub-tasks)
-│           └── TaskNotes (conversations, research, brainstorms)
+Goal (with GoalDomain: .career | .finance | .growth)
+├── visionText / visionRefined
+└── Milestone[] (12 sequential milestones)
+    └── MomentumTask[] (daily tasks with checklists)
+        ├── ChecklistItem[] (step-by-step with time estimates)
+        ├── TaskNotes (conversations, research, brainstorms)
+        └── AITaskEvaluation (AI assessment + tool prompts)
+```
+
+### GoalDomain
+```swift
+enum GoalDomain: String, Codable, CaseIterable {
+    case career   // Blue accent
+    case finance  // Green accent
+    case growth   // Violet accent
+}
 ```
 
 ## Design System
 
-### Colors
+### Colors (Dark-First)
 ```swift
-// Primary
-Color.momentumViolet        // #7C3AED - Brand purple
-Color.momentumDeepBlue      // #1E3A8A - Deep blue
-
 // Background
-Color.momentumDarkBackground    // #0F172A - Main background
-Color.momentumSurfacePrimary    // #0E0F12 - Card surfaces
-Color.momentumSurfaceSecondary  // #15171C - Elevated surfaces
+Color.momentumBackground           // #09090B - zinc-950 (primary)
+Color.momentumBackgroundSecondary  // #18181B - zinc-900
 
-// Text
-Color.momentumPrimaryText       // White
-Color.momentumSecondaryText     // #94A3B8 - Gray
+// Surface / Cards
+Color.momentumCardBackground       // #18181B - zinc-900
+Color.momentumCardBorder           // white 8% opacity
 
 // Accent
-Color.momentumGold              // #F59E0B - Achievements
-Color.momentumGreenStart        // #10B981 - Success
-Color.momentumCoral             // #FF6B4A - Highlights
+Color.momentumBlue                 // #3B82F6 - Electric blue (primary accent)
+Color.momentumBlueLight            // #06B6D4 - Cyan
+Color.momentumViolet               // #8B5CF6 - Violet
+
+// Status
+Color.momentumSuccess              // #10B981 - Emerald
+Color.momentumWarning              // #F59E0B - Amber
+Color.momentumDanger               // #EF4444 - Red
+
+// Text
+Color.momentumTextPrimary          // #FAFAFA - zinc-50
+Color.momentumTextSecondary        // #A1A1AA - zinc-400
+Color.momentumTextTertiary         // #71717A - zinc-500
+
+// Domain Colors
+Color.momentumCareer               // Blue
+Color.momentumFinance              // Green
+Color.momentumGrowth               // Violet
 ```
 
-### Typography
+### Typography (SF Pro Display)
 ```swift
-MomentumFont.heading(24)     // Bold, default design
-MomentumFont.body(16)        // Regular weight
-MomentumFont.bodyMedium(17)  // Medium weight
-MomentumFont.stats(18)       // Medium, rounded design
+MomentumFont.headingLarge()      // 28pt bold
+MomentumFont.headingMedium()     // 22pt semibold
+MomentumFont.body()              // 17pt regular
+MomentumFont.bodyMedium()        // 17pt medium
+MomentumFont.label()             // 13pt medium
+MomentumFont.caption()           // 12pt regular
 ```
 
 ### View Modifiers
 ```swift
-.opaqueSurface()             // Dark surface with border
-.opaqueSurface(level: .primary)   // Darkest surface
-.opaqueSurface(level: .elevated)  // With shadow
-.cardStyle(highlighted: true)     // Card with optional highlight
+.momentumCard()              // Dark card with border + corner radius
+.glass()                     // Ultra-thin material glassmorphism
+.glassCard()                 // Glass + card styling
+.glowBorder(color:)          // Animated gradient border
 ```
 
 ### Button Styles
 ```swift
 Button("Action") { }
-    .buttonStyle(PrimaryButtonStyle())    // Gradient background
+    .buttonStyle(PrimaryButtonStyle())    // Blue gradient + glow shadow
 
 Button("Cancel") { }
-    .buttonStyle(SecondaryButtonStyle())  // Transparent with border
+    .buttonStyle(SecondaryButtonStyle())  // Transparent + border
 ```
 
 ### Gradients
 ```swift
-MomentumGradients.primary    // Deep blue → Violet
+MomentumGradients.primary    // Blue → Cyan
+MomentumGradients.neonBlue   // Electric blue → Cyan
+MomentumGradients.neonViolet // Violet → Fuchsia
 MomentumGradients.success    // Green gradient
-MomentumGradients.gold       // Gold gradient (achievements)
-MomentumGradients.background // Dark background gradient
+MomentumGradients.midnight   // zinc-950 → zinc-900
 ```
+
+### Animations
+```swift
+MomentumAnimation.smoothSpring   // response: 0.35, damping: 0.85
+MomentumAnimation.snappy         // response: 0.25, damping: 0.9
+MomentumAnimation.dramatic       // response: 0.5, damping: 0.7
+MomentumAnimation.staggered(index:) // Staggered entrance delays
+```
+
+### Spacing
+```swift
+MomentumSpacing.tight        // 4
+MomentumSpacing.compact      // 8
+MomentumSpacing.standard     // 12
+MomentumSpacing.comfortable  // 16
+MomentumSpacing.large        // 20
+MomentumSpacing.section      // 24
+```
+
+## Navigation
+
+- **3 tabs**: Dashboard (house), Goals (target), Profile (user)
+- **Floating tab bar**: Glassmorphic `.ultraThinMaterial` at bottom
+- **Floating AI button**: Blue→Cyan gradient, opens chat overlay
+- **Chat panel**: Persistent overlay (not modal), swipe-down to dismiss
+- **Dark mode enforced**: `.preferredColorScheme(.dark)` at root
 
 ## AI Integration
 
@@ -157,14 +221,16 @@ MomentumGradients.background // Dark background gradient
 generateOnboardingQuestions(vision:goalType:) → [OnboardingQuestion]
 generateGoalPlan(vision:answers:) → AIGeneratedPlan
 
-// Task Help
-getTaskHelp(task:context:) → String
-generateMicrosteps(for:) → [Microstep]
+// Task Management
+evaluateTodaysTasks(tasks:milestoneContext:goalContext:) → [TaskWithEvaluation]
+generateChecklistForTask(task:milestoneContext:goalContext:) → [ChecklistItem]
 
-// Research
+// Chat & Research
 analyzeMessageIntent(message:taskContext:) → MessageIntent
-generateResearchClarifications(query:taskContext:) → [String]
 performBrowserSearch(query:clarifications:) → ResearchFinding
+
+// Skill Assessment
+generateSkillQuestion(task:goal:) → SkillQuestion
 ```
 
 ## Patterns & Conventions
@@ -173,19 +239,29 @@ performBrowserSearch(query:clarifications:) → ResearchFinding
 - Use `@EnvironmentObject var appState: AppState` for global state
 - AppState is `@MainActor` - all UI updates thread-safe
 - Auto-save on every change to UserDefaults
+- Active goal accessed via `appState.activeGoal`
 
-### Sheet Presentation
+### Chat Overlay
 ```swift
-// Always use item-based sheets (prevents blank screens)
-.sheet(item: $selectedTask) { task in
-    TaskDetailView(task: task)
+// GlobalAIChatView supports both overlay and modal modes
+GlobalAIChatView(isOverlay: true, onDismiss: { dismissChat() })
+GlobalAIChatView()  // Default modal mode
+```
+
+### Navigation Tabs
+```swift
+enum Tab: String, CaseIterable {
+    case dashboard = "Dashboard"
+    case goals = "Goals"
+    case profile = "Profile"
 }
 ```
 
-### Navigation
-- Tab-based via MainTabView
-- Modal sheets for details
-- Dark mode forced: `.preferredColorScheme(.dark)`
+### Dark Theme
+- All views use dark color tokens from Theme.swift
+- All previews include `.preferredColorScheme(.dark)`
+- Background: `Color.momentumBackground` (not `Color.white`)
+- Text: `.momentumTextPrimary`, `.momentumTextSecondary`, `.momentumTextTertiary`
 
 ### Async/Await
 ```swift
@@ -201,8 +277,9 @@ Task {
 1. Create file in appropriate `Views/` subdirectory
 2. Import SwiftUI and PhosphorSwift
 3. Add `@EnvironmentObject var appState: AppState`
-4. Use `Color.momentumDarkBackground` as root background
-5. Apply `.preferredColorScheme(.dark)`
+4. Use `Color.momentumBackground` as root background
+5. Use dark color tokens for all surfaces and text
+6. Add `.preferredColorScheme(.dark)` to preview
 
 ### Adding an Icon
 ```swift
@@ -219,6 +296,7 @@ Browse icons at: https://phosphoricons.com
 2. Conform to `Identifiable, Codable`
 3. Add corresponding property to AppState if needed
 4. Add persistence key if storing separately
+5. Add `GoalDomain` if goal-related
 
 ### Modifying AI Prompts
 - All prompts in `GroqService.swift`
@@ -233,7 +311,7 @@ open Momentum.xcodeproj
 
 # Build (Cmd+B)
 # Run on simulator (Cmd+R)
-# Target: iOS 26.0+
+# Target: iOS 17.0+
 ```
 
 ## Configuration
@@ -248,14 +326,14 @@ Edit `Config.swift` for:
 
 ### Always Ask Clarifying Questions
 
-Before making significant changes, **always ask clarifying questions** when:
+Before making significant changes, **always ask clarifying questions** using AskUserQuestion when:
 - Requirements are ambiguous or incomplete
 - Multiple implementation approaches are possible
 - Changes could affect existing functionality
 - You're unsure about the user's intent or preferences
 - The task involves architectural decisions
 
-Do not assume - it's better to ask and get it right than to make incorrect changes.
+Never assume - it's better to ask and get it right than to make incorrect changes.
 
 ### Always Push to GitHub
 
