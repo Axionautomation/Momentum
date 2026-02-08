@@ -8,6 +8,7 @@
 import SwiftUI
 import BackgroundTasks
 import UserNotifications
+import Combine
 
 @main
 struct MomentumApp: App {
